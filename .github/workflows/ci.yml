@@ -1,0 +1,43 @@
+# Every gate this project has, on every push.
+#
+# The order is deliberate: typecheck first because it is the fastest way to
+# learn the branch is broken, then lint, then tests, then the production build.
+# The build runs even though `npm test` passed, because the two disagree about
+# what "works" more often than is comfortable: tests run modules through vite's
+# dev transform, while the build is the thing people are actually served.
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+
+      # `ci` and not `install`: the lockfile is the input, and a run that
+      # quietly resolves a different tree is not a check of this commit.
+      - run: npm ci
+
+      - name: Typecheck
+        run: npx tsc -b
+
+      - name: Lint
+        run: npx oxlint
+
+      # Includes the interface smoke tests, which mount the real component tree
+      # in jsdom. They exist because every defect found in this project so far
+      # lived in the interface layer, where there was no coverage at all.
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build

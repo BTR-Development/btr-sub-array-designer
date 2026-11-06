@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key>
+  <string>BTR Sub Array Designer</string>
+  <key>CFBundleDisplayName</key>
+  <string>BTR Sub Array Designer</string>
+  <key>CFBundleExecutable</key>
+  <string>BTRSubArrayDesigner</string>
+  <key>CFBundleIdentifier</key>
+  <string>tech.btone.subarraydesigner</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>1.0.0</string>
+  <key>CFBundleVersion</key>
+  <string>1</string>
+  <key>CFBundleIconFile</key>
+  <string>AppIcon</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>12.0</string>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+  <key>NSHumanReadableCopyright</key>
+  <string>Author: Karol Bernacki · BTR Solutions</string>
+  <!-- .btrsub is the project file: its own extension, so a
+       double-click opens it here. Projects written before that are .json /
+       .btr.json, which this app may open but must not claim from every other
+       JSON tool: it is listed as an Alternate handler, i.e. in Open With. -->
+  <key>UTExportedTypeDeclarations</key>
+  <array>
+    <dict>
+      <key>UTTypeIdentifier</key>
+      <string>tech.btone.subarraydesigner.project</string>
+      <key>UTTypeDescription</key>
+      <string>BTR Sub Array project</string>
+      <key>UTTypeConformsTo</key>
+      <array>
+        <string>public.json</string>
+      </array>
+      <key>UTTypeIconFile</key>
+      <string>AppIcon</string>
+      <key>UTTypeTagSpecification</key>
+      <dict>
+        <key>public.filename-extension</key>
+        <array>
+          <string>btrsub</string>
+        </array>
+        <key>public.mime-type</key>
+        <string>application/vnd.btr.subarray+json</string>
+      </dict>
+    </dict>
+  </array>
+  <key>CFBundleDocumentTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleTypeName</key>
+      <string>BTR Sub Array project</string>
+      <key>LSItemContentTypes</key>
+      <array>
+        <string>tech.btone.subarraydesigner.project</string>
+      </array>
+      <key>CFBundleTypeIconFile</key>
+      <string>AppIcon</string>
+      <key>CFBundleTypeRole</key>
+      <string>Editor</string>
+      <key>LSHandlerRank</key>
+      <string>Owner</string>
+    </dict>
+    <dict>
+      <key>CFBundleTypeName</key>
+      <string>BTR Sub Array project (JSON)</string>
+      <key>LSItemContentTypes</key>
+      <array>
+        <string>public.json</string>
+      </array>
+      <key>CFBundleTypeRole</key>
+      <string>Editor</string>
+      <key>LSHandlerRank</key>
+      <string>Alternate</string>
+    </dict>
+  </array>
+</dict>
+</plist>

@@ -2,7 +2,7 @@
 <!-- Per-monitor DPI awareness (sharp text on 125/150 % displays), common
      controls v6 for the Save dialog, and the Windows 10/11 compatibility id. -->
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
-  <assemblyIdentity type="win32" name="BTR.SubArrayDesigner" version="1.0.0.0" processorArchitecture="amd64"/>
+  <assemblyIdentity type="win32" name="BTR.SubArrayDesigner" version="1.1.0.0" processorArchitecture="amd64"/>
   <description>BTR SAD - Sub Array Designer</description>
   <dependency>
     <dependentAssembly>

@@ -184,17 +184,22 @@ export const EXAMPLE_RIGS: ExampleRig[] = [
     id: 'endfire',
     name: 'End-Fire',
     description:
-      '4 cabinets stacked front-to-back 1.4 m apart, each progressively delayed by its own spacing so the rear lobe cancels.',
+      '3 rows of 2 cabinets, 1.0 m apart (tuned for 86 Hz). The rear row plays first; the program keeps each row delayed by its distance from the rear row.',
     build: () => {
-      const n = 4;
-      const d = 1.4;
-      const sources = Array.from({ length: n }, (_, i) => {
-        const s = makeSource(REF, `SUB ${String(i + 1).padStart(2, '0')}`, { x: 0, y: -i * d, z: deckZ(REF) });
-        // rear-most fires first; each cabinet in front of it waits d/c longer
-        s.delayS = ((n - 1 - i) * d) / C20;
-        return s;
-      });
-      return { doc: doc(sources, AUDIENCE_POINTS, 'End-Fire'), sim: sim({ frequencyHz: 63 }) };
+      const rows = 3;
+      const d = 1.0;
+      const efId = 'ef_preset';
+      const sources: Source[] = [];
+      for (let r = 0; r < rows; r++) {
+        for (const x of [-0.7, 0.7]) {
+          const s = makeSource(REF, `SUB ${String(sources.length + 1).padStart(2, '0')}`, { x, y: -r * d, z: deckZ(REF) });
+          s.ef = { arrayId: efId };
+          sources.push(s);
+        }
+      }
+      const project = doc(sources, AUDIENCE_POINTS, 'End-Fire');
+      project.efArrays = [{ id: efId, name: 'EF 1', aimDeg: 0, targetHz: 86 }];
+      return { doc: project, sim: sim({ frequencyHz: 63 }) };
     },
   },
   {

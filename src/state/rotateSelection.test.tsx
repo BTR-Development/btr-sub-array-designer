@@ -156,8 +156,8 @@ describe('every way in turns the selection as one body', () => {
       return { clientX: x, clientY: y, pointerId: 1 };
     };
     // down on the right-hand cabinet, then a quarter turn about the centre
-    fireEvent.pointerDown(canvas, { ...at(1.5, 0), altKey: true });
-    fireEvent.pointerMove(canvas, { ...at(0, 1.5), altKey: true });
+    fireEvent.pointerDown(canvas, { ...at(1.5, 0), ctrlKey: true });
+    fireEvent.pointerMove(canvas, { ...at(0, 1.5), ctrlKey: true });
     fireEvent.pointerUp(canvas, at(0, 1.5));
     const r = st().sources;
     expect(r.every((x) => x.rotation.azimuthDeg === -90)).toBe(true);

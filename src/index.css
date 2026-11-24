@@ -521,26 +521,26 @@ input[type='checkbox'] { accent-color: var(--accent-link); }
 .ctx-overlay { position: fixed; inset: 0; z-index: var(--z-menu); }
 .ctx-menu { position: fixed; top: auto; left: auto; min-width: 200px; }
 
-/* ── panel End-fired w panelu grup ──
-   Rzędy są listą do czytania, nie tabelą do edycji: nazwa rzędu, obsada
-   i jeden przycisk zwolnienia. Delay wchodzi wyłącznie przyciskiem pod
-   spodem, żeby przypisanie samo z siebie niczego nie przestawiało. */
-.ef-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
-.ef-list .menu-sep { margin: 0; }
-.ef-block { display: flex; flex-direction: column; gap: 4px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
-.ef-block:last-child { border-bottom: none; }
-.ef-rows { display: flex; flex-direction: column; gap: 2px; padding: 0 8px; }
-.ef-row { display: flex; align-items: center; gap: 8px; font-size: var(--fs-label); color: var(--fg-secondary); }
-.ef-row-name { min-width: 28px; }
-.ef-row-count { flex: 1 1 auto; }
-.ef-row-release {
-  height: 18px; padding: 0 6px; font-size: var(--fs-label);
-  background: none; border: 1px solid var(--line-strong); border-radius: var(--r-sm);
-  color: var(--fg-secondary);
+/* ── panel End-fire ──
+   Stały panel lewej kolumny. Rzędy są listą do czytania (rola, obsada,
+   delay): delaye liczy program z geometrii, więc nie ma tu czego wpisywać. */
+.ef-body { display: flex; flex-direction: column; gap: 8px; }
+.ef-block { display: flex; flex-direction: column; gap: 4px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.ef-block:last-child { border-bottom: none; padding-bottom: 0; }
+.ef-rows { width: 100%; border-collapse: collapse; font-size: var(--fs-label); color: var(--fg-secondary); }
+.ef-rows td { padding: 1px 4px; }
+.ef-row-name { width: 28px; color: var(--fg-strong); }
+.ef-row-role { color: var(--fg-muted); }
+.ef-row-count { text-align: right; }
+.ef-row-delay { text-align: right; color: var(--accent); white-space: nowrap; }
+.ef-actions { flex-wrap: wrap; }
+.ef-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: var(--fs-label); color: var(--fg-secondary); }
+.marquee-box {
+  position: absolute;
+  border: 1px solid var(--accent-border);
+  background: var(--accent-row);
+  pointer-events: none;
 }
-.ef-row-release:hover { background: var(--bg-hover); color: var(--fg); }
-.ef-apply { align-self: flex-start; margin-left: 8px; }
-.ef-warn { margin: 0 8px; }
 
 
 

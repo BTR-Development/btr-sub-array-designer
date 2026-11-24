@@ -82,6 +82,7 @@ export function Inspector() {
   const positionYaw = same((x) => x.positionYawDeg ?? 0);
   const level = same((x) => x.levelDb);
   const delayMs = same((x) => x.delayS * MS);
+  const efMs = same((x) => (x.efDelayS ?? 0) * MS);
 
   return (
     <div className="inspector">
@@ -261,6 +262,11 @@ export function Inspector() {
           />
         </Field>
         <p className="hint mono">{delayHint(delayMs ?? 0, s.sim.speedOfSound)}</p>
+        {efMs !== null && efMs !== 0 && (
+          // The end-fire delay is not in the field above: it is computed from
+          // where the rows stand and kept right on every move (Source.efDelayS).
+          <p className="hint mono">{t('insp.efDelay', { ms: efMs.toFixed(2) })}</p>
+        )}
         {(delayMs ?? 0) < 0 && (
           <p className="warn">{t('insp.negativeDelay')}</p>
         )}

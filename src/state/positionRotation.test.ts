@@ -10,6 +10,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { useStore } from './store';
 import { measureReversal } from './arrayTools';
+import { toVendorModel } from '../io/vendor/internalModel';
+import { soundvisionDeviceFor } from '../io/vendor/deviceMap';
+import { buildSvDocument } from '../io/vendor/soundvision/writer';
 import type { Source } from '../core/types';
 
 const st = () => useStore.getState();
@@ -143,4 +146,16 @@ describe('a position turns as one enclosure', () => {
     expect(measureReversal(st().sources, 'x', 0.56).describable).toBe(true);
   });
 
+  it('goes to Soundvision as one cluster turned by the same angle', () => {
+    rig(2, 'FBFF');
+    const p0 = positions()[0];
+    st().rotatePositions([p0[0].id], 25);
+    const m = toVendorModel(st().toProject(), st().provider);
+    const doc = buildSvDocument(m.sources, m.groupName, (s) => soundvisionDeviceFor(s.btrSpeakerId).device, 0);
+    expect(doc.clusters).toHaveLength(2);
+    // file azimuth is the negated BTR azimuth
+    const az = doc.clusters.map((c) => -c.azimuth).sort((a, b) => a - b);
+    expect(az[0]).toBeCloseTo(0, 6);
+    expect(az[1]).toBeCloseTo(25, 6);
+  });
 });

@@ -164,7 +164,7 @@ function fakeHost(over: Partial<FileHost> = {}) {
   };
   setFileHost(host);
   const errors: string[] = [];
-  bindFileUi({ t: (k, v) => translate('en', k, v), setError: (e) => e && errors.push(e), setNotice: () => undefined });
+  bindFileUi({ t: (k, v) => translate('en', k, v), onVendorImport: () => undefined, setError: (e) => e && errors.push(e), setNotice: () => undefined });
   return { disk, host, errors };
 }
 

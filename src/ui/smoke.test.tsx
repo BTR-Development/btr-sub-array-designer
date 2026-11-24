@@ -146,12 +146,16 @@ describe('the app runs', () => {
     // The 2D stage draws a canvas in a .canvas-wrap too, so the hint is what
     // says WHICH view is on screen. Without it this test passes against a
     // button that does nothing.
-    expect(screen.getByText(/Drag to orbit/)).toBeTruthy();
+    expect(screen.getByText(/drag orbits/)).toBeTruthy();
     const canvas = document.querySelector('.canvas-wrap canvas');
     if (!canvas) throw new Error('the 3D viewport drew no canvas');
-    fireEvent.pointerDown(canvas, { clientX: 100, clientY: 100 });
-    fireEvent.pointerMove(canvas, { clientX: 160, clientY: 70 });
+    // Cmd/Ctrl + drag orbits; a plain drag draws a selection box
+    fireEvent.pointerDown(canvas, { clientX: 100, clientY: 100, ctrlKey: true });
+    fireEvent.pointerMove(canvas, { clientX: 160, clientY: 70, ctrlKey: true, buttons: 1 });
     fireEvent.pointerUp(canvas);
+    fireEvent.pointerDown(canvas, { clientX: 100, clientY: 100, button: 0, buttons: 1 });
+    fireEvent.pointerMove(canvas, { clientX: 160, clientY: 70, buttons: 1 });
+    fireEvent.pointerUp(canvas, { clientX: 160, clientY: 70, button: 0 });
     fireEvent.wheel(canvas, { deltaY: -120 });
     fireEvent.doubleClick(canvas);
     expectQuiet();
@@ -160,7 +164,7 @@ describe('the app runs', () => {
     // by the chrome around the canvas and says "top view" in both views, so it
     // cannot tell them apart: the hint can, because only Canvas3D renders it.
     fireEvent.click(screen.getByTitle('Plan view, X/Y'));
-    expect(screen.queryByText(/Drag to orbit/)).toBeNull();
+    expect(screen.queryByText(/drag orbits/)).toBeNull();
     expect(screen.getByText(/top view X\/Y/)).toBeTruthy();
     expectQuiet();
   });
@@ -178,7 +182,7 @@ describe('the app runs', () => {
       useStore.getState().newProject();
     });
     expect(useStore.getState().sources).toHaveLength(0);
-    expect(screen.getByText(/Drag to orbit/)).toBeTruthy();
+    expect(screen.getByText(/drag orbits/)).toBeTruthy();
     const canvas = document.querySelector('.canvas-wrap canvas');
     if (!canvas) throw new Error('the 3D viewport drew no canvas');
     fireEvent.doubleClick(canvas);

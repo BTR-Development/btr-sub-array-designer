@@ -198,8 +198,8 @@ describe('alt-drag rotates what the view can show being rotated', () => {
 
     // Down on the cabinet's centre, so the start angle is the same in either
     // convention, then up and forward by equal amounts: 45 degrees of tilt.
-    fireEvent.pointerDown(canvas, { ...at(0, 2), altKey: true });
-    fireEvent.pointerMove(canvas, { ...at(1, 3), altKey: true });
+    fireEvent.pointerDown(canvas, { ...at(0, 2), ctrlKey: true });
+    fireEvent.pointerMove(canvas, { ...at(1, 3), ctrlKey: true });
     fireEvent.pointerUp(canvas, at(1, 3));
 
     const s1 = st().sources[0];
@@ -213,8 +213,8 @@ describe('alt-drag rotates what the view can show being rotated', () => {
 
     // 100 degrees of drag: past vertical the front vector folds over, which is
     // a different heading rather than a steeper tilt.
-    fireEvent.pointerDown(canvas, { ...at(0, 2), altKey: true });
-    fireEvent.pointerMove(canvas, { ...at(...polar(100, 4)), altKey: true });
+    fireEvent.pointerDown(canvas, { ...at(0, 2), ctrlKey: true });
+    fireEvent.pointerMove(canvas, { ...at(...polar(100, 4)), ctrlKey: true });
     fireEvent.pointerUp(canvas, at(...polar(100, 4)));
 
     expect(st().sources[0].rotation.elevationDeg).toBe(90);
@@ -228,8 +228,8 @@ describe('alt-drag rotates what the view can show being rotated', () => {
     sideOneCabinet();
     const canvas = render(<CanvasStage result={null} />).container.querySelector('canvas')!;
 
-    fireEvent.pointerDown(canvas, { ...at(...polar(170, 0.3)), altKey: true });
-    fireEvent.pointerMove(canvas, { ...at(...polar(-170, 4)), altKey: true });
+    fireEvent.pointerDown(canvas, { ...at(...polar(170, 0.3)), ctrlKey: true });
+    fireEvent.pointerMove(canvas, { ...at(...polar(-170, 4)), ctrlKey: true });
     fireEvent.pointerUp(canvas, at(...polar(-170, 4)));
 
     expect(st().sources[0].rotation.elevationDeg).toBe(20);
@@ -258,10 +258,10 @@ describe('alt-drag rotates what the view can show being rotated', () => {
 
     const canvas = render(<CanvasStage result={null} />).container.querySelector('canvas')!;
     // Down on B, drawn at (11, 0): 90 degrees round from the drawn centre.
-    fireEvent.pointerDown(canvas, { ...at(11, 0), altKey: true });
+    fireEvent.pointerDown(canvas, { ...at(11, 0), ctrlKey: true });
     // Up to due north of it: the pointer has swung a quarter turn about (10, 0),
     // and only 5.7 degrees about (0, 0).
-    fireEvent.pointerMove(canvas, { ...at(10, 1), altKey: true });
+    fireEvent.pointerMove(canvas, { ...at(10, 1), ctrlKey: true });
     fireEvent.pointerUp(canvas, at(10, 1));
 
     expect(st().sources.map((x) => x.rotation.azimuthDeg)).toEqual([-90, -90]);
@@ -360,5 +360,154 @@ describe('the empty-canvas overlay', () => {
     muted.mute = true;
     project([muted]);
     expect(screen.queryByText(EN['plot.emptyTitle'])).toBe(null);
+  });
+});
+
+// ─────────────────────────────────────────────── the mouse, 8.11.2026 ────
+describe('a plain drag selects; Shift moves, Cmd/Ctrl rotates', () => {
+  function planTwo() {
+    act(() => {
+      st().patchSim({ plane: 'top' });
+      st().setView({ scale: 20, cx: 0, cy: 0 });
+      useStore.setState({ snap: 0.5 });
+    });
+    project([sub('S1', 0, 0), sub('S2', 4, 0)], [], []);
+  }
+
+  it('a plain drag that starts on a cabinet draws a box instead of moving it', () => {
+    planTwo();
+    const canvas = render(<CanvasStage result={null} />).container.querySelector('canvas')!;
+    fireEvent.pointerDown(canvas, at(0, 0));
+    fireEvent.pointerMove(canvas, at(5, -2));
+    fireEvent.pointerUp(canvas, at(5, -2));
+    expect(st().sources.map((x) => x.position)).toEqual([
+      { x: 0, y: 0, z: 0 },
+      { x: 4, y: 0, z: 0 },
+    ]);
+    expect(st().selectedSourceIds).toEqual(st().sources.map((x) => x.id));
+  });
+
+  it('a plain click picks one cabinet', () => {
+    planTwo();
+    const canvas = render(<CanvasStage result={null} />).container.querySelector('canvas')!;
+    fireEvent.pointerDown(canvas, at(4, 0));
+    fireEvent.pointerUp(canvas, at(4, 0));
+    expect(st().selectedSourceIds).toEqual([st().sources[1].id]);
+  });
+
+  it('Shift + drag moves the cabinet it grabs, snapped, as one undo step', () => {
+    planTwo();
+    const canvas = render(<CanvasStage result={null} />).container.querySelector('canvas')!;
+    fireEvent.pointerDown(canvas, { ...at(0, 0), shiftKey: true });
+    fireEvent.pointerMove(canvas, { ...at(1.1, 2.2), shiftKey: true });
+    fireEvent.pointerUp(canvas, { ...at(1.1, 2.2), shiftKey: true });
+    expect(st().sources[0].position).toEqual({ x: 1, y: 2, z: 0 });
+    expect(st().sources[1].position).toEqual({ x: 4, y: 0, z: 0 });
+    expect(st().undoStack).toHaveLength(1);
+  });
+
+  it('Alt while moving takes the snapping off', () => {
+    planTwo();
+    const canvas = render(<CanvasStage result={null} />).container.querySelector('canvas')!;
+    fireEvent.pointerDown(canvas, { ...at(0, 0), shiftKey: true });
+    fireEvent.pointerMove(canvas, { ...at(1.1, 2.2), shiftKey: true, altKey: true });
+    fireEvent.pointerUp(canvas, at(1.1, 2.2));
+    const p = st().sources[0].position;
+    expect(p.x).toBeCloseTo(1.1, 6);
+    expect(p.y).toBeCloseTo(2.2, 6);
+  });
+
+  it('Shift + drag on empty space moves the whole selection', () => {
+    planTwo();
+    act(() => st().selectSources(st().sources.map((x) => x.id)));
+    const canvas = render(<CanvasStage result={null} />).container.querySelector('canvas')!;
+    fireEvent.pointerDown(canvas, { ...at(2, 5), shiftKey: true });
+    fireEvent.pointerMove(canvas, { ...at(2, 6), shiftKey: true });
+    fireEvent.pointerUp(canvas, at(2, 6));
+    expect(st().sources.map((x) => x.position.y)).toEqual([1, 1]);
+  });
+
+  it('a Shift-click and a Cmd-click keep their list meaning', () => {
+    planTwo();
+    const canvas = render(<CanvasStage result={null} />).container.querySelector('canvas')!;
+    fireEvent.pointerDown(canvas, at(0, 0));
+    fireEvent.pointerUp(canvas, at(0, 0));
+    fireEvent.pointerDown(canvas, { ...at(4, 0), metaKey: true });
+    fireEvent.pointerUp(canvas, { ...at(4, 0), metaKey: true });
+    expect(st().selectedSourceIds).toHaveLength(2);
+    fireEvent.pointerDown(canvas, { ...at(4, 0), metaKey: true });
+    fireEvent.pointerUp(canvas, { ...at(4, 0), metaKey: true });
+    expect(st().selectedSourceIds).toEqual([st().sources[0].id]);
+    expect(st().sources.map((x) => x.position.x)).toEqual([0, 4]);
+  });
+
+  it('Cmd/Ctrl + drag turns the selection about its centre', () => {
+    planTwo();
+    const canvas = render(<CanvasStage result={null} />).container.querySelector('canvas')!;
+    act(() => st().selectSources(st().sources.map((x) => x.id)));
+    // centre (2, 0): from due east of it to due north is a quarter turn
+    fireEvent.pointerDown(canvas, { ...at(5, 0), metaKey: true });
+    fireEvent.pointerMove(canvas, { ...at(2, 3), metaKey: true });
+    fireEvent.pointerUp(canvas, at(2, 3));
+    const [a, b] = st().sources;
+    expect(Math.abs(a.rotation.azimuthDeg - b.rotation.azimuthDeg)).toBeLessThan(1e-9);
+    expect(Math.abs(((a.rotation.azimuthDeg % 360) + 360) % 360 - 90) % 180).toBe(0);
+    expect(a.position.x).toBeCloseTo(2, 6);
+  });
+});
+
+// ──────────────────────────────────────────── Cmd/Ctrl + arrows ────
+describe('Cmd/Ctrl + arrows turn the selection', () => {
+  function one() {
+    render(<App />);
+    project([sub('S1', 0, 0)]);
+  }
+  const rot = () => st().sources[0].rotation;
+  const pos = () => st().sources[0].position;
+
+  it('left/right turn by 5°, right is clockwise on the plan', () => {
+    one();
+    fireEvent.keyDown(window, { key: 'ArrowRight', metaKey: true });
+    expect(rot().azimuthDeg).toBeCloseTo(5, 9);
+    fireEvent.keyDown(window, { key: 'ArrowLeft', ctrlKey: true });
+    fireEvent.keyDown(window, { key: 'ArrowLeft', ctrlKey: true });
+    expect(rot().azimuthDeg).toBeCloseTo(-5, 9);
+    expect(pos()).toEqual({ x: 0, y: 0, z: pos().z });
+  });
+
+  it('Shift makes it 1°', () => {
+    one();
+    fireEvent.keyDown(window, { key: 'ArrowRight', metaKey: true, shiftKey: true });
+    expect(rot().azimuthDeg).toBeCloseTo(1, 9);
+    fireEvent.keyDown(window, { key: 'ArrowUp', ctrlKey: true, shiftKey: true });
+    expect(rot().elevationDeg).toBeCloseTo(1, 9);
+  });
+
+  it('up/down tilt the front and stop at ±90°', () => {
+    one();
+    fireEvent.keyDown(window, { key: 'ArrowUp', metaKey: true });
+    expect(rot().elevationDeg).toBeCloseTo(5, 9);
+    fireEvent.keyDown(window, { key: 'ArrowDown', metaKey: true });
+    fireEvent.keyDown(window, { key: 'ArrowDown', metaKey: true });
+    expect(rot().elevationDeg).toBeCloseTo(-5, 9);
+    for (let i = 0; i < 30; i++) fireEvent.keyDown(window, { key: 'ArrowDown', metaKey: true });
+    expect(rot().elevationDeg).toBe(-90);
+    expect(rot().azimuthDeg).toBe(0);
+  });
+
+  it('a held key is one undo step', () => {
+    one();
+    fireEvent.keyDown(window, { key: 'ArrowRight', metaKey: true });
+    for (let i = 0; i < 5; i++) fireEvent.keyDown(window, { key: 'ArrowRight', metaKey: true, repeat: true });
+    expect(rot().azimuthDeg).toBeCloseTo(30, 9);
+    act(() => st().undo());
+    expect(rot().azimuthDeg).toBeCloseTo(0, 9);
+  });
+
+  it('plain arrows still move', () => {
+    one();
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    expect(pos().x).toBeGreaterThan(0);
+    expect(rot().azimuthDeg).toBe(0);
   });
 });

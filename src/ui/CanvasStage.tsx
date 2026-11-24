@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { useStore } from '../state/store';
 import { cssVar } from '../render/cssTokens';
 import { resolveAll } from '../state/resolve';
+import { aimVector, efLayouts } from '../state/efArrays';
 import { useHeatCanvas } from './useHeatCanvas';
 import {
   fitView,
@@ -37,7 +38,49 @@ type DragMode =
       ids: string[];
     }
   | { kind: 'pan'; startX: number; startY: number; cx: number; cy: number }
-  | { kind: 'marquee'; startH: number; startV: number; curH: number; curV: number };
+  | { kind: 'marquee'; startH: number; startV: number; curH: number; curV: number; additive: boolean }
+  | {
+      /** pressed, not yet a click or a drag */
+      kind: 'press';
+      startX: number;
+      startY: number;
+      startH: number;
+      startV: number;
+      mpId: string | null;
+      id: string | null;
+      gesture: Gesture;
+      /** Alt at the press: the box adds to the selection */
+      additive: boolean;
+    };
+
+/** What a left drag does, chosen by the key held when it starts. */
+type Gesture = 'select' | 'move' | 'rotate';
+
+/** Travel below this is a click, not a drag. */
+const CLICK_SLOP_PX = 4;
+
+/** A circular arrow, so a held Cmd/Ctrl says "a drag turns" before the drag. */
+const ROTATE_CURSOR =
+  "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 22 22'><path d='M17 11a6 6 0 1 1-2-4.5' fill='none' stroke='black' stroke-width='4' stroke-linecap='round'/><path d='M17 11a6 6 0 1 1-2-4.5' fill='none' stroke='white' stroke-width='2' stroke-linecap='round'/><path d='M13 3h5v5z' fill='white' stroke='black' stroke-width='1'/></svg>\") 11 11, crosshair";
+
+/** The gesture the keys held right now would start, for the cursor. */
+function useHeldGesture(): Gesture {
+  const [g, setG] = useState<Gesture>('select');
+  useEffect(() => {
+    const read = (e: KeyboardEvent) =>
+      setG(e.metaKey || e.ctrlKey ? 'rotate' : e.shiftKey ? 'move' : 'select');
+    const clear = () => setG('select');
+    window.addEventListener('keydown', read);
+    window.addEventListener('keyup', read);
+    window.addEventListener('blur', clear);
+    return () => {
+      window.removeEventListener('keydown', read);
+      window.removeEventListener('keyup', read);
+      window.removeEventListener('blur', clear);
+    };
+  }, []);
+  return g;
+}
 
 /**
  * Which angle the Alt-drag gesture writes.
@@ -83,6 +126,7 @@ export function CanvasStage({ result }: Props) {
   const [, force] = useState(0);
 
   const s = useStore();
+  const held = useHeldGesture();
   const vp: Viewport = { width: size.width, height: size.height, view: s.view };
 
   // ---------------------------------------------------------------- resize
@@ -345,6 +389,68 @@ export function CanvasStage({ result }: Props) {
       }
     }
 
+    // ---- end-fire rows: which row each cabinet plays in, and when
+    //
+    // Said ON the rows, because that is where the operator looks while moving
+    // them, and the numbers follow every drag (the delays are live).
+    if (s.efArrays.length && s.view.scale > 3) {
+      const accent = CSSV.sel;
+      const byId = new Map(resolved.map((r) => [r.source.id, r]));
+      for (const l of efLayouts(resolved, s.efArrays, s.sim.speedOfSound)) {
+        if (!l.rows.length) continue;
+        const centres = l.rows.map((row) => {
+          const pts = row.ids.map((id) => planeAxes(plane, byId.get(id)!.position));
+          const h = pts.reduce((a, p) => a + p[0], 0) / pts.length;
+          const v = pts.reduce((a, p) => a + p[1], 0) / pts.length;
+          const right = Math.max(...pts.map((p) => worldToScreen(vp, p[0], p[1])[0]));
+          return { h, v, right };
+        });
+        ctx.font = '11px ui-monospace, SFMono-Regular, Menlo, monospace';
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'left';
+        l.rows.forEach((row, i) => {
+          const c = centres[i];
+          const [, sy] = worldToScreen(vp, c.h, c.v);
+          const pad = 0.45 * s.view.scale + 10;
+          const role = row.n === 1 && l.rows.length > 1 ? ' ▲' : '';
+          const text = `${l.ef.name} R${row.n}${role}  ${(row.delayS * 1000).toFixed(2)} ms`;
+          const x = c.right + pad;
+          const w = ctx.measureText(text).width + 8;
+          ctx.fillStyle = 'rgba(18,20,22,0.82)';
+          ctx.fillRect(x - 4, sy - 9, w, 18);
+          ctx.fillStyle = accent;
+          ctx.fillText(text, x, sy);
+        });
+        // The aim, from the rear row through the front row, in plan only: the
+        // section shows depth already.
+        if (plane === 'top' && l.rows.length > 1) {
+          const v = aimVector(l.ef.aimDeg);
+          const front = centres[0];
+          const rear = centres[centres.length - 1];
+          const len = 1.2;
+          const [ax, ay] = worldToScreen(vp, rear.h, rear.v);
+          const [bx, by] = worldToScreen(vp, front.h + v.x * len, front.v + v.y * len);
+          ctx.strokeStyle = accent;
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([6, 4]);
+          ctx.beginPath();
+          ctx.moveTo(ax, ay);
+          ctx.lineTo(bx, by);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          const ang = Math.atan2(by - ay, bx - ax);
+          ctx.fillStyle = accent;
+          ctx.beginPath();
+          ctx.moveTo(bx, by);
+          ctx.lineTo(bx - 11 * Math.cos(ang - 0.4), by - 11 * Math.sin(ang - 0.4));
+          ctx.lineTo(bx - 11 * Math.cos(ang + 0.4), by - 11 * Math.sin(ang + 0.4));
+          ctx.closePath();
+          ctx.fill();
+        }
+      }
+      ctx.textBaseline = 'alphabetic';
+    }
+
     // ---- measurement points
     for (const mp of s.measurementPoints) {
       const [h, v] = planeAxes(plane, mp.position);
@@ -433,6 +539,20 @@ export function CanvasStage({ result }: Props) {
     return [e.clientX - r.left, e.clientY - r.top];
   };
 
+  /**
+   * The mouse: a plain press SELECTS — a click
+   * picks, a drag draws a box. What a drag does to the cabinets is chosen by a
+   * held key: Shift moves, Cmd/Ctrl rotates. Alt while dragging takes the
+   * snapping off (a move follows the mouse, a turn goes in 1° steps).
+   *
+   * Nothing is decided on the press itself: whether it was a click or a drag
+   * is only known once the pointer has travelled, so a Shift-click and a
+   * Cmd-click keep their list meaning (range, toggle) and only a Shift-DRAG
+   * moves.
+   */
+  const gestureOf = (e: { shiftKey: boolean; metaKey: boolean; ctrlKey: boolean }): Gesture =>
+    e.metaKey || e.ctrlKey ? 'rotate' : e.shiftKey ? 'move' : 'select';
+
   const onPointerDown = (e: React.PointerEvent) => {
     canvasRef.current?.setPointerCapture(e.pointerId);
     const [sx, sy] = localXY(e);
@@ -450,81 +570,85 @@ export function CanvasStage({ result }: Props) {
     }
 
     const mpId = hitPoint(h, v);
-    if (mpId) {
-      s.selectPoint(mpId);
-      const mp = s.measurementPoints.find((m) => m.id === mpId)!;
+    dragRef.current = {
+      kind: 'press',
+      startX: sx,
+      startY: sy,
+      startH: h,
+      startV: v,
+      mpId,
+      id: mpId ? null : hitSource(h, v),
+      gesture: gestureOf(e),
+      additive: e.altKey,
+    };
+  };
+
+  /** A press that has travelled becomes the drag its key asked for. */
+  const beginDrag = (d: Extract<DragMode, { kind: 'press' }>): DragMode => {
+    if (d.gesture === 'select') {
+      return { kind: 'marquee', startH: d.startH, startV: d.startV, curH: d.startH, curV: d.startV, additive: d.additive };
+    }
+    if (d.mpId && d.gesture === 'move') {
+      s.selectPoint(d.mpId);
+      const mp = s.measurementPoints.find((m) => m.id === d.mpId)!;
       s.snapshot();
       s.setInteracting(true);
-      dragRef.current = {
+      return {
         kind: 'move',
-        startH: h,
-        startV: v,
-        origin: new Map([[`mp:${mpId}`, { ...mp.position }]]),
+        startH: d.startH,
+        startV: d.startV,
+        origin: new Map([[`mp:${d.mpId}`, { ...mp.position }]]),
         moved: false,
       };
-      return;
     }
-
-    const id = hitSource(h, v);
-    if (id) {
-      const already = s.selectedSourceIds.includes(id);
-      if (e.shiftKey || e.metaKey || e.ctrlKey) {
-        // same modifier rules as the lists, over the project order
-        s.selectSourceAt(id, s.sources.map((x) => x.id), {
-          toggle: e.metaKey || e.ctrlKey,
-          range: e.shiftKey,
-        });
-      } else if (!already) {
-        s.selectSources([id]);
-      }
-
-      const ids = already && !e.shiftKey ? s.selectedSourceIds : e.shiftKey ? [...new Set([...s.selectedSourceIds, id])] : [id];
-      s.snapshot();
-      s.setInteracting(true);
-
-      if (e.altKey) {
-        // The pivot is taken from RESOLVED positions. The pointer angle is
-        // measured in world coordinates, so a pivot averaged over the stored
-        // positions sits away from the visible cabinets for any selection inside
-        // a group carrying an offset or a yaw, and the drag then swings about a
-        // point that is nowhere on screen.
-        const picked = resolveAll(s.sources, s.groups, s.provider).filter((r) => ids.includes(r.source.id));
-        const ch = picked.reduce((a, r) => a + planeAxes(s.sim.plane, r.position)[0], 0) / picked.length;
-        const cv = picked.reduce((a, r) => a + planeAxes(s.sim.plane, r.position)[1], 0) / picked.length;
-        const axis: RotateAxis = s.sim.plane === 'top' ? 'azimuth' : 'elevation';
-        dragRef.current = {
-          kind: 'rotate',
-          axis,
-          centerH: ch,
-          centerV: cv,
-          startAngle: pointerAngle(axis, h - ch, v - cv),
-          // Stan sprzed przeciągnięcia: azymut liczy się od niego przy każdym
-          // ruchu myszy, razem z położeniem (obrót bryły, rotateSelection).
-          from: s.sources,
-          ids,
-          // The angles written are the source's OWN, not the resolved ones: a
-          // group's yaw is an offset on top of them and stays where it is.
-          origin: new Map(
-            picked.map((r) => [
-              r.source.id,
-              axis === 'azimuth' ? r.source.rotation.azimuthDeg : r.source.rotation.elevationDeg,
-            ]),
-          ),
-        };
-      } else {
-        const origin = new Map<string, Vec3>();
-        for (const src of s.sources) if (ids.includes(src.id)) origin.set(src.id, { ...src.position });
-        dragRef.current = { kind: 'move', startH: h, startV: v, origin, moved: false };
-      }
-      return;
+    // The drag acts on the selection; grabbing a cabinet outside it takes that
+    // cabinet instead, the way every editor does.
+    let ids = s.selectedSourceIds;
+    if (d.id && !ids.includes(d.id)) {
+      ids = [d.id];
+      s.selectSources(ids);
     }
+    if (!ids.length) return { kind: 'none' };
+    s.snapshot();
+    s.setInteracting(true);
 
-    // empty space
-    dragRef.current = { kind: 'marquee', startH: h, startV: v, curH: h, curV: v };
+    if (d.gesture === 'rotate') {
+      // The pivot is taken from RESOLVED positions. The pointer angle is
+      // measured in world coordinates, so a pivot averaged over the stored
+      // positions sits away from the visible cabinets for any selection inside
+      // a group carrying an offset or a yaw, and the drag then swings about a
+      // point that is nowhere on screen.
+      const picked = resolveAll(s.sources, s.groups, s.provider).filter((r) => ids.includes(r.source.id));
+      const ch = picked.reduce((a, r) => a + planeAxes(s.sim.plane, r.position)[0], 0) / picked.length;
+      const cv = picked.reduce((a, r) => a + planeAxes(s.sim.plane, r.position)[1], 0) / picked.length;
+      const axis: RotateAxis = s.sim.plane === 'top' ? 'azimuth' : 'elevation';
+      return {
+        kind: 'rotate',
+        axis,
+        centerH: ch,
+        centerV: cv,
+        startAngle: pointerAngle(axis, d.startH - ch, d.startV - cv),
+        // Stan sprzed przeciągnięcia: azymut liczy się od niego przy każdym
+        // ruchu myszy, razem z położeniem (obrót bryły, rotateSelection).
+        from: s.sources,
+        ids,
+        // The angles written are the source's OWN, not the resolved ones: a
+        // group's yaw is an offset on top of them and stays where it is.
+        origin: new Map(
+          picked.map((r) => [
+            r.source.id,
+            axis === 'azimuth' ? r.source.rotation.azimuthDeg : r.source.rotation.elevationDeg,
+          ]),
+        ),
+      };
+    }
+    const origin = new Map<string, Vec3>();
+    for (const src of s.sources) if (ids.includes(src.id)) origin.set(src.id, { ...src.position });
+    return { kind: 'move', startH: d.startH, startV: d.startV, origin, moved: false };
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
-    const d = dragRef.current;
+    let d = dragRef.current;
     const [sx, sy] = localXY(e);
 
     if (d.kind === 'pan') {
@@ -535,6 +659,12 @@ export function CanvasStage({ result }: Props) {
       return;
     }
     if (d.kind === 'none') return;
+    if (d.kind === 'press') {
+      if (Math.hypot(sx - d.startX, sy - d.startY) < CLICK_SLOP_PX) return;
+      d = beginDrag(d);
+      dragRef.current = d;
+      if (d.kind === 'none') return;
+    }
 
     const [h, v] = screenToWorld(vp, sx, sy);
 
@@ -550,7 +680,7 @@ export function CanvasStage({ result }: Props) {
       // by a full turn, which is harmless for a modular azimuth and would send a
       // clamped elevation straight to its limit.
       let deltaDeg = ((((ang - d.startAngle) * 180) / Math.PI + 540) % 360) - 180;
-      if (e.shiftKey) deltaDeg = Math.round(deltaDeg); // fine
+      if (e.altKey) deltaDeg = Math.round(deltaDeg); // fine
       else deltaDeg = Math.round(deltaDeg / 5) * 5;
       if (d.axis === 'azimuth') {
         // po okręgu wokół środka zaznaczenia, nie każda skrzynia w miejscu
@@ -567,8 +697,8 @@ export function CanvasStage({ result }: Props) {
       return;
     }
 
-    // move
-    const snapStep = e.shiftKey ? 0 : s.snap;
+    if (d.kind !== 'move') return;
+    const snapStep = e.altKey ? 0 : s.snap;
     let dh = h - d.startH;
     let dv = v - d.startV;
 
@@ -606,25 +736,38 @@ export function CanvasStage({ result }: Props) {
       if (id || s.selectedSourceIds.length) s.openCtxMenu(e.clientX, e.clientY);
     }
 
-    if (d.kind === 'marquee') {
-      const dist = Math.hypot(h - d.startH, v - d.startV);
-      if (dist * s.view.scale < 4) {
-        // a plain click on empty canvas = probe the prediction there
+    if (d.kind === 'press') {
+      // A click: it selects, with the list's modifier rules.
+      if (d.mpId) {
+        s.selectPoint(d.mpId);
+      } else if (d.id) {
+        if (d.gesture === 'select') {
+          s.selectSources([d.id]);
+        } else {
+          s.selectSourceAt(d.id, s.sources.map((x) => x.id), {
+            toggle: d.gesture === 'rotate',
+            range: d.gesture === 'move',
+          });
+        }
+      } else if (d.gesture === 'select') {
+        // a plain click on empty canvas = clear the selection and probe there
         s.selectSources([]);
         s.selectPoint(null);
         s.setCursorPoint(pointOnPlane(s.sim.plane, h, v, s.sim.area.planeOffset));
-      } else {
-        const lo = { h: Math.min(d.startH, h), v: Math.min(d.startV, v) };
-        const hi = { h: Math.max(d.startH, h), v: Math.max(d.startV, v) };
-        const resolved = resolveAll(s.sources, s.groups, s.provider);
-        const ids = resolved
-          .filter((r) => {
-            const [ph, pv] = planeAxes(s.sim.plane, r.position);
-            return ph >= lo.h && ph <= hi.h && pv >= lo.v && pv <= hi.v;
-          })
-          .map((r) => r.source.id);
-        s.selectSources(ids, e.shiftKey);
       }
+    }
+
+    if (d.kind === 'marquee') {
+      const lo = { h: Math.min(d.startH, h), v: Math.min(d.startV, v) };
+      const hi = { h: Math.max(d.startH, h), v: Math.max(d.startV, v) };
+      const resolved = resolveAll(s.sources, s.groups, s.provider);
+      const ids = resolved
+        .filter((r) => {
+          const [ph, pv] = planeAxes(s.sim.plane, r.position);
+          return ph >= lo.h && ph <= hi.h && pv >= lo.v && pv <= hi.v;
+        })
+        .map((r) => r.source.id);
+      s.selectSources(ids, d.additive);
     }
 
     dragRef.current = { kind: 'none' };
@@ -654,7 +797,18 @@ export function CanvasStage({ result }: Props) {
     <div ref={wrapRef} className="canvas-wrap">
       <canvas
         ref={canvasRef}
-        style={{ width: size.width, height: size.height, cursor: s.tool === 'addPoint' ? 'crosshair' : 'default' }}
+        style={{
+          width: size.width,
+          height: size.height,
+          cursor:
+            s.tool === 'addPoint'
+              ? 'crosshair'
+              : held === 'rotate'
+                ? ROTATE_CURSOR
+                : held === 'move'
+                  ? 'move'
+                  : 'default',
+        }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}

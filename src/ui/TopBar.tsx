@@ -7,6 +7,7 @@ import {
   saveUserPreset,
   type UserPreset,
 } from '../state/userPresets';
+import { VENDOR_EXPORTERS } from '../io/vendor/registry';
 import { requestFit } from '../render/view';
 import { Icon } from './icons';
 import { Logo } from './Logo';
@@ -17,6 +18,8 @@ import { bindFileUi, guardUnsaved, saveProject } from './projectFiles';
 import { fileHost } from '../platform/fileHost';
 import { recentFiles, type RecentFile } from '../platform/recentFiles';
 import { LANGUAGES, type Lang } from '../i18n';
+import type { VendorExporter } from '../io/vendor/types';
+import type { VendorImporter, VendorScene } from '../io/vendor/importTypes';
 import type { PredictionPlane } from '../core/types';
 
 /**
@@ -25,12 +28,16 @@ import type { PredictionPlane } from '../core/types';
  * *drawn* lives further down, next to the plot.
  */
 export function TopBar({
+  onVendorExport,
+  onVendorImport,
   onDelaySheet,
   onHelp,
   computing,
 }: {
+  onVendorExport: (e: VendorExporter) => void;
   onDelaySheet: () => void;
   onHelp: () => void;
+  onVendorImport: (scene: VendorScene, importer: VendorImporter) => void;
   computing: boolean;
 }) {
   const s = useStore();
@@ -74,11 +81,11 @@ export function TopBar({
 
   // The file actions live in projectFiles.ts so the keyboard, the unsaved-
   // changes dialog and the operating system reach the same code; this bar
-  // lends them its error and notice strips.
+  // lends them its error and notice strips and the vendor import dialog.
   useEffect(() => {
-    bindFileUi({ t, setError, setNotice });
+    bindFileUi({ t, onVendorImport, setError, setNotice });
     return () => bindFileUi(null);
-  }, [t]);
+  }, [t, onVendorImport]);
 
   const [recent, setRecent] = useState<RecentFile[]>([]);
   const openFileMenu = () => {
@@ -147,6 +154,12 @@ export function TopBar({
               <button className="menu-save-as" onClick={() => { setMenu(null); void saveProject(true); }}>
                 {t('tb.saveAsFile')} <small>⇧{mod}S</small>
               </button>
+              <div className="menu-sep">{t('tb.exportTo')}</div>
+              {VENDOR_EXPORTERS.map((e) => (
+                <button key={e.id} onClick={() => { setMenu(null); onVendorExport(e); }} title={t(e.verificationNote)}>
+                  {e.label} <small>{e.extension}</small>
+                </button>
+              ))}
               <div className="menu-sep">{t('tb.handOff')}</div>
               <button
                 className="menu-delay-sheet"

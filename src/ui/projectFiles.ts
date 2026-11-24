@@ -1,25 +1,29 @@
 /**
- * Opening and saving a project, the way a document program does it: Save writes back to the file the
- * project came from, Save as asks where, Open and the recent list reopen by path, and
+ * Opening and saving a project, the way a document program does it: Save
+ * writes back to the file the project came from, Save as asks where, Open and the recent list reopen by path, and
  * nothing that is unsaved is thrown away without asking.
  *
  * Kept out of the components because four places start these actions — the
  * File menu, the keyboard, the unsaved-changes dialog and the operating
  * system handing over a file — and they must all behave the same. The top bar
- * binds the parts that need its UI (its error and notice strips) once it is mounted.
+ * binds the parts that need its UI (the vendor import dialog, its error and
+ * notice strips) once it is mounted.
  */
 import { useStore, type DiscardThen } from '../state/store';
 import { EXPORTERS, importerFor } from '../io/registry';
 import { legacyYawNotice } from '../io/btrJson';
+import { vendorImporterFor } from '../io/vendor/registry';
 import { describeUnreadableSpeakerFile } from '../io/speakerData/balloonImport';
 import { requestFit } from '../render/view';
 import { worthSaving } from '../state/autosave';
 import { fileHost, PROJECT_EXTENSION, type HostFile } from '../platform/fileHost';
 import { forgetRecent, rememberRecent } from '../platform/recentFiles';
+import type { VendorImporter, VendorScene } from '../io/vendor/importTypes';
 import type { MessageKey, Vars } from '../i18n';
 
 export interface FileUi {
   t: (key: MessageKey, vars?: Vars) => string;
+  onVendorImport: (scene: VendorScene, importer: VendorImporter) => void;
   setError: (msg: string | null) => void;
   setNotice: (msg: string | null) => void;
 }
@@ -38,11 +42,20 @@ export function projectFileName(name: string): string {
   return `${base}${PROJECT_EXTENSION}`;
 }
 
-/** Open what the user picked, dropped or double-clicked: a project file. */
+/** Open what the user picked, dropped or double-clicked: a project, or a vendor file to import. */
 export async function openHostFile(f: HostFile): Promise<void> {
   if (!ui) return;
   ui.setError(null);
   const file = new File([f.bytes as BlobPart], f.name);
+  const vendor = vendorImporterFor(file);
+  if (vendor) {
+    try {
+      ui.onVendorImport(await vendor.read(file), vendor);
+    } catch (e) {
+      ui.setError(message(e));
+    }
+    return;
+  }
   const importer = importerFor(file);
   if (!importer) {
     // A dropped .GLL deserves the real reason and the way forward, not a shrug.

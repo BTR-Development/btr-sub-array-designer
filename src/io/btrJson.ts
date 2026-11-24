@@ -17,7 +17,6 @@ import {
   type Vec3,
   type EfArray,
 } from '../core/types';
-import { EF_MAX_ARRAYS, EF_MAX_ROWS } from '../core/types';
 import type {
   BalloonDataset,
   DataProvenance,
@@ -71,9 +70,10 @@ function parseSource(raw: unknown, i: number): Source {
 function parseEf(raw: unknown): Source['ef'] {
   const o = (raw ?? null) as Record<string, unknown> | null;
   if (!o || typeof o.arrayId !== 'string') return undefined;
+  // `row` was written by the hand-assigned rows of 7–8.11.2026; rows now come
+  // from the geometry, but the number is kept for the migration below.
   const row = num(o.row, NaN);
-  if (!isFinite(row) || row < 1) return undefined;
-  return { arrayId: o.arrayId, row: Math.round(row) };
+  return isFinite(row) && row >= 1 ? { arrayId: o.arrayId, row: Math.round(row) } : { arrayId: o.arrayId };
 }
 
 function parseGroup(raw: unknown, i: number): Group {
@@ -472,22 +472,27 @@ export function parseBTRProject(text: string): BTRProject {
   const groupIds = new Set(groups.map((g) => g.id));
   for (const s of sources) if (s.groupId && !groupIds.has(s.groupId)) s.groupId = null;
 
-  // End-fired arrays: at most EF_MAX_ARRAYS containers of 1..EF_MAX_ROWS rows,
-  // and an assignment pointing at a missing container or row is dropped the
-  // way a dangling groupId is.
-  const efRaw = Array.isArray(o.efArrays) ? o.efArrays.slice(0, EF_MAX_ARRAYS) : [];
+  // End-fire arrays. A membership pointing at a missing container is dropped
+  // the way a dangling groupId is.
+  const efRaw = Array.isArray(o.efArrays) ? o.efArrays : [];
+  const legacyEf = new Set<string>();
   const efArrays: EfArray[] = efRaw.map((raw, i) => {
     const e = (raw ?? {}) as Record<string, unknown>;
+    const id = typeof e.id === 'string' ? e.id : `ef_import_${i}`;
+    // Written before the aim existed: those arrays fired along +Y.
+    if (typeof e.aimDeg !== 'number') legacyEf.add(id);
+    const target = num(e.targetHz, NaN);
     return {
-      id: typeof e.id === 'string' ? e.id : `ef_import_${i}`,
+      id,
       name: typeof e.name === 'string' ? e.name : `EF ${i + 1}`,
-      rows: Math.min(EF_MAX_ROWS, Math.max(1, Math.round(num(e.rows, 1)))),
+      aimDeg: num(e.aimDeg, 0),
+      targetHz: isFinite(target) && target > 0 ? target : null,
     };
   });
-  const efById = new Map(efArrays.map((e) => [e.id, e]));
-  for (const s of sources) {
-    if (s.ef && (s.ef.row > (efById.get(s.ef.arrayId)?.rows ?? 0))) s.ef = undefined;
-  }
+  const efIds = new Set(efArrays.map((e) => e.id));
+  for (const s of sources) if (s.ef && !efIds.has(s.ef.arrayId)) s.ef = undefined;
+  const sim = parseSim(o.simulationSettings);
+  if (legacyEf.size) migrateLegacyEfDelays(sources, groups, legacyEf, sim.speedOfSound);
 
   const meta = (o.project ?? {}) as Record<string, unknown>;
 
@@ -508,7 +513,7 @@ export function parseBTRProject(text: string): BTRProject {
     groups,
     measurementPoints: Array.isArray(o.measurementPoints) ? o.measurementPoints.map(parsePoint) : [],
     efArrays,
-    simulationSettings: parseSim(o.simulationSettings),
+    simulationSettings: sim,
     customSpeakers: parseCustomSpeakers(o.customSpeakers),
   };
 }
@@ -578,3 +583,38 @@ export const btrJsonExporter: ProjectExporter = {
     return new Blob([JSON.stringify(project, jsonSafe, 2)], { type: 'application/json' });
   },
 };
+
+/**
+ * Files from 7–8.11.2026 carried end-fire delays IN THE DELAY COLUMN, written
+ * there by an "Apply end-fire delays" button. The end-fire delay is now a
+ * layer of its own, recomputed from the geometry, so leaving the old numbers in
+ * the column would play every row twice as late.
+ *
+ * Only a cabinet whose Delay is exactly what that button would have written is
+ * cleared: a number the user typed in since then stays, as their number.
+ */
+function migrateLegacyEfDelays(
+  sources: Source[],
+  groups: Group[],
+  legacy: Set<string>,
+  speedOfSound: number,
+): void {
+  const offsetY = new Map(groups.map((g) => [g.id, g.offset.y]));
+  for (const efId of legacy) {
+    const rows = new Map<number, Source[]>();
+    for (const s of sources) {
+      if (s.ef?.arrayId !== efId || !s.ef.row) continue;
+      rows.set(s.ef.row, [...(rows.get(s.ef.row) ?? []), s]);
+    }
+    if (rows.size < 2) continue;
+    const meanY = [...rows].map(([, m]) => ({
+      m,
+      y: m.reduce((a, s) => a + s.position.y + (s.groupId ? offsetY.get(s.groupId) ?? 0 : 0), 0) / m.length,
+    }));
+    const yFar = Math.min(...meanY.map((r) => r.y));
+    for (const r of meanY) {
+      const was = (r.y - yFar) / speedOfSound;
+      for (const s of r.m) if (Math.abs(s.delayS - was) < 1e-6) s.delayS = 0;
+    }
+  }
+}

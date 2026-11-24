@@ -5,8 +5,8 @@ import { useT } from '../i18n/useT';
 /**
  * The right-click menu over a selection of cabinets. Deliberately small: it
  * holds only what has no better home than "on the thing itself", which today
- * is the two end-fired actions. Everything in it also exists as a visible
- * control in the End-fired panel, so the menu is a shortcut, not the only way.
+ * is end-fire. Everything in it also exists as a visible control (the
+ * End-fire… buttons and the End-fire panel), so the menu is a shortcut.
  */
 export function ContextMenu() {
   const s = useStore();
@@ -47,20 +47,20 @@ export function ContextMenu() {
       >
         <button
           role="menuitem"
-          disabled={!sel.length}
+          disabled={!sel.length || anyAssigned}
           onClick={() => {
             s.closeCtxMenu();
-            s.setEfAssignOpen(true);
+            s.setEndFireOpen(true);
           }}
         >
-          {t('ctx.assignEf')}
+          {t('ctx.makeEf')}
         </button>
         <button
           role="menuitem"
           disabled={!anyAssigned}
           onClick={() => {
             s.closeCtxMenu();
-            s.releaseFromEf(sel);
+            s.removeFromEf(sel);
           }}
         >
           {t('ctx.releaseEf')}

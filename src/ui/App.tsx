@@ -14,8 +14,10 @@ import { PolarPlot } from './PolarPlot';
 import { SourceGps } from './SourceGps';
 import { SpeakerDialog } from './SpeakerDialog';
 import { ArrayDialog } from './ArrayDialog';
+import { ExportDialog } from './ExportDialog';
 import { ContextMenu } from './ContextMenu';
-import { EfAssignDialog } from './EfAssignDialog';
+import { EndFireDialog } from './EndFireDialog';
+import { ImportDialog } from './ImportDialog';
 import { ConfirmDialog } from './ConfirmDialog';
 import { DelaySheetDialog } from './DelaySheet';
 import { Toast } from './Toast';
@@ -31,6 +33,8 @@ import { QUALITY_KEY } from '../i18n';
 import { useT } from '../i18n/useT';
 import { Splitter } from './Splitter';
 import { useSize } from './useSize';
+import type { VendorExporter } from '../io/vendor/types';
+import type { VendorImporter, VendorScene } from '../io/vendor/importTypes';
 import { requestFit } from '../render/view';
 
 export function App() {
@@ -45,6 +49,8 @@ export function App() {
     [s.sources, s.groups, s.provider, s.customSpeakers],
   );
   const [dialog, setDialog] = useState<'speaker' | 'array' | 'sheet' | 'help' | null>(null);
+  const [vendorExport, setVendorExport] = useState<VendorExporter | null>(null);
+  const [vendorImport, setVendorImport] = useState<{ scene: VendorScene; importer: VendorImporter } | null>(null);
   const polarSize = useSize('polarH', 'y');
   const debugSize = useSize('debugH', 'y');
   const gpsSize = useSize('gpsH', 'y');
@@ -181,6 +187,16 @@ export function App() {
       if (a) {
         if (!st.selectedSourceIds.length) return;
         e.preventDefault();
+        if (mod) {
+          // Cmd/Ctrl + arrows turn instead of move: left/right swing the
+          // azimuth (as one block, like [ ]), up/down tilt the front. A held key
+          // repeats; only the first press opens an undo step.
+          const deg = e.shiftKey ? 1 : 5;
+          const [dh, dv] = a;
+          if (dh) st.rotateSelected(st.selectedSourceIds, dh * deg, { history: !e.repeat });
+          else st.tiltSelected(st.selectedSourceIds, dv * deg, !e.repeat);
+          return;
+        }
         const step = e.shiftKey ? 0.01 : st.snap || 0.1;
         const [dh, dv] = a;
         const delta = st.sim.plane === 'top'
@@ -197,6 +213,8 @@ export function App() {
     <div className="app">
       <CrashRecovery />
       <TopBar
+        onVendorExport={setVendorExport}
+        onVendorImport={(scene, importer) => setVendorImport({ scene, importer })}
         onDelaySheet={() => setDialog('sheet')}
         onHelp={() => setDialog('help')}
         computing={prediction.computing}
@@ -331,10 +349,18 @@ export function App() {
       {dialog === 'sheet' && <DelaySheetDialog onClose={() => setDialog(null)} />}
       {dialog === 'help' && <HelpDialog onClose={() => setDialog(null)} />}
       {s.tutorialOpen && <Tutorial />}
+      {vendorExport && <ExportDialog exporter={vendorExport} onClose={() => setVendorExport(null)} />}
       <ContextMenu />
-      {s.efAssignOpen && <EfAssignDialog onClose={() => s.setEfAssignOpen(false)} />}
+      {s.endFireOpen && <EndFireDialog onClose={() => s.setEndFireOpen(false)} />}
       <StatusBar />
 
+      {vendorImport && (
+        <ImportDialog
+          scene={vendorImport.scene}
+          importer={vendorImport.importer}
+          onClose={() => setVendorImport(null)}
+        />
+      )}
     </div>
   );
 }

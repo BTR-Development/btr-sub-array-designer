@@ -24,8 +24,9 @@ The builds are not signed by Apple or Microsoft yet, so the system asks once:
 
 - Places subwoofers in plan and 3D view, as single cabinets or as arrays.
 - Builds delay tapers, arcs, end-fire and cardioid stacks from the array geometry.
-- Takes end-fired rows filled by hand, mixed cabinet types included, and sets
-  their delays from the row geometry.
+- Makes an end-fire block from the selected front row: adds the rows behind it at
+  λ/4 of the tuned frequency (or takes rows already standing), reads the rows from
+  the geometry and keeps their delays right as you move them.
 - Computes the interference map and polar response per frequency or band.
 - Saves projects as `.btrsub` files, and produces a delay and position sheet for
   the crew and an image of the map.
@@ -48,7 +49,31 @@ included. Dimensions, weight, frequency range and maximum SPL come from the
 manufacturers' published material, and an unconfirmed value stays `null`. See
 [docs/SPEAKER-DATA.md](docs/SPEAKER-DATA.md).
 
-There is no import from or export to other manufacturers' prediction programs.
+## Soundvision and ArrayCalc
+
+`File → Export to` writes an L-Acoustics Soundvision `.xmlc` or a d&b ArrayCalc
+`.dbpr`, and `File → Open…` reads both. Positions, aiming, level, delay and
+polarity cross over; acoustic data never does, and every substitution is listed
+before the file is written. See [docs/VENDOR-FORMATS.md](docs/VENDOR-FORMATS.md).
+
+ArrayCalc works in every build. Soundvision encrypts its files with a key that
+belongs to L-Acoustics, and that key is **not** in this repository or in the
+published builds: without it the program says it cannot write or open an
+encrypted `.xmlc` (a plaintext Soundvision `.xml` still imports). How to build with
+your own key is in [docs/VENDOR-FORMATS.md](docs/VENDOR-FORMATS.md).
+
+## Mouse and keyboard
+
+| Gesture | Plan | 3D |
+|---|---|---|
+| click, drag | select, box select | select, box select |
+| Shift + drag | move the selection | pan the camera |
+| Cmd/Ctrl + drag | turn the selection | orbit the camera |
+| Alt while dragging | no snapping, 1° turns | |
+| Cmd/Ctrl + ← → | turn by 5° (Shift: 1°) | |
+| Cmd/Ctrl + ↑ ↓ | tilt the front by 5° (Shift: 1°) | |
+
+On macOS use Cmd: the system keeps Ctrl + arrows for switching desktops.
 
 ## Run it
 

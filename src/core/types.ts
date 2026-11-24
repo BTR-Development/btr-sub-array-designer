@@ -104,32 +104,53 @@ export interface Source {
    */
   positionYawDeg?: number;
   /**
-   * Membership of ONE end-fired array row. Set only through the assign action,
-   * released explicitly, and never copied with a cabinet: a duplicate in the
-   * same row would double that row without anyone having asked for it.
+   * Membership of ONE end-fire array. Only the membership is a fact; the ROW a
+   * cabinet stands in is read from the geometry along the array's aim (see
+   * `efLayout`), so moving a row can never leave a stale row number behind.
+   * Never copied with a cabinet: a duplicate in the same block would add a
+   * cabinet to it without anyone having asked for it.
+   *
+   * `row` is what files written on 7–8.11.2026 carried (rows were assigned by
+   * hand then). It is read and ignored.
    */
-  ef?: { arrayId: string; row: number };
+  ef?: { arrayId: string; row?: number };
+  /**
+   * The end-fire delay of this cabinet, a hidden layer like `gradientDelayS`:
+   * written ONLY by the end-fire machinery (`syncEfDelays`), kept equal to the
+   * row's distance from the rear row over the speed of sound whenever anything
+   * moves or the temperature changes, and added to the cabinet's delay by the
+   * resolver. The Delay column stays the user's.
+   */
+  efDelayS?: number;
 }
 
 /**
- * An end-fired array: a named container of numbered rows that cabinets are
- * assigned to by hand. Row 1 is the row nearest the audience (largest Y).
- * The container itself has no geometry; the cabinets keep their positions,
- * and the delays are computed from where the rows actually stand.
+ * An end-fire array: rows of cabinets one behind the other along `aimDeg`,
+ * the rear row playing first and every row in front of it waiting for the
+ * sound of the rows behind (distance over c), so the rows add up going forward
+ * and cancel going back.
+ *
+ * The container holds no geometry and no row numbers. Rows are found from
+ * where the member cabinets stand along the aim, row 1 being the FRONT row
+ * (nearest the audience), and the delays follow from that — live.
  */
 export interface EfArray {
   id: string;
   name: string;
-  /** How many rows this array has, 1..EF_MAX_ROWS. */
-  rows: number;
+  /** Which way the block fires, same convention as a cabinet's azimuth (0 = +Y, the audience). */
+  aimDeg: number;
+  /** The frequency the row spacing was tuned for (spacing = λ/4), or null when nobody said. */
+  targetHz: number | null;
 }
 
-/** A project holds at most this many end-fired arrays. */
-export const EF_MAX_ARRAYS = 10;
-/** An end-fired array holds at most this many rows. */
-export const EF_MAX_ROWS = 20;
-/** More rows than this prompts a warning the user has to accept. */
-export const EF_SANE_ROWS = 3;
+/** The most rows the end-fire tool builds in one go. */
+export const EF_MAX_ROWS = 8;
+/**
+ * Cabinets whose depth along the aim differs by less than this stand in the
+ * same row. Below any useful end-fire spacing (λ/4 at 150 Hz is 0.57 m) and
+ * above the stagger of a hand-placed row.
+ */
+export const EF_ROW_TOL_M = 0.25;
 
 /**
  * A group is a *transform + offset* over its members. It never rewrites the

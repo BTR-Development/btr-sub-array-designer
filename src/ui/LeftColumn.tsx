@@ -8,8 +8,7 @@ import { useSize } from './useSize';
 import { useT } from '../i18n/useT';
 import { Icon } from './icons';
 import { planeAxes } from '../render/view';
-import { resolveAll } from '../state/resolve';
-import { efRowCounts, efRowIds, efRowMeansY, efRowsOutOfOrder } from '../state/efArrays';
+import { EndFirePanel } from './EndFirePanel';
 
 /** Enter or Space on a focused row does what a click on it does. */
 function onActivate(run: (e: React.KeyboardEvent) => void) {
@@ -116,6 +115,14 @@ export function LeftColumn({
             title={t('src.arrayHint')}
           >
             {t('src.arrayDots')}
+          </button>
+          <button
+            className="panel-head-btn"
+            onClick={() => s.setEndFireOpen(true)}
+            disabled={!s.selectedSourceIds.length}
+            title={t('ef.newHint')}
+          >
+            {t('ef.newDots')}
           </button>
         </header>
 
@@ -245,6 +252,9 @@ export function LeftColumn({
       )}
       {s.showSteering && <SteeringPanel />}
 
+      {/* ──────────────────────────────────────────────────── end-fire ── */}
+      <EndFirePanel />
+
       {/* ─────────────────────────────────────────────── prediction area ── */}
       {openArea && <Splitter axis="y" target="next" sizeKey="areaH" min={60} max={700} />}
       <section className={`panel${openArea ? ' sized' : ''}`} style={openArea ? areaSize : undefined}>
@@ -313,7 +323,6 @@ function GroupPanel() {
             </div>
           ))}
         </div>
-        {s.efArrays.length > 0 && <EfPanel />}
         {selected ? (
           <GroupInspector />
         ) : (
@@ -321,88 +330,6 @@ function GroupPanel() {
         )}
       </div>
     </section>
-  );
-}
-
-/**
- * The end-fired arrays: every container, its rows and their occupancy, and the
- * actions the right-click menu is only a shortcut to. Row 1 is the row nearest
- * the audience; when the assigned geometry says otherwise, that is said here
- * rather than silently baked into wrong delays.
- */
-function EfPanel() {
-  const s = useStore();
-  const t = useT();
-  const resolved = resolveAll(s.sources, s.groups, s.provider);
-
-  return (
-    <div className="ef-list">
-      <div className="menu-sep">{t('ef.panelTitle')}</div>
-      {s.efArrays.map((ef) => {
-        const counts = efRowCounts(s.sources, ef.id);
-        const total = [...counts.values()].reduce((a, b) => a + b, 0);
-        const means = efRowMeansY(resolved, ef.id);
-        const memberIds = s.sources.filter((x) => x.ef?.arrayId === ef.id).map((x) => x.id);
-        return (
-          <div className="ef-block" key={ef.id}>
-            <div
-              className="tree-row group"
-              tabIndex={0}
-              role="button"
-              aria-pressed={false}
-              title={t('ef.meta', { rows: counts.size, total: ef.rows, count: total })}
-              onClick={() => memberIds.length && s.selectSources(memberIds)}
-              onKeyDown={onActivate(() => memberIds.length && s.selectSources(memberIds))}
-            >
-              <span className="tree-name">{ef.name}</span>
-              <span className="tree-meta mono">
-                {t('ef.meta', { rows: counts.size, total: ef.rows, count: total })}
-              </span>
-              <button
-                className="mute-btn ef-del"
-                title={t('ef.deleteHint')}
-                aria-label={`${ef.name}: ${t('ef.delete')}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  s.deleteEfArray(ef.id);
-                }}
-              >
-                ×
-              </button>
-            </div>
-            <div className="ef-rows mono">
-              {Array.from({ length: ef.rows }, (_, i) => i + 1).map((n) => {
-                const c = counts.get(n) ?? 0;
-                return (
-                  <div className="ef-row" key={n}>
-                    <span className="ef-row-name">R{n}</span>
-                    <span className="ef-row-count">{c ? t('groups.members', { n: c }) : '-'}</span>
-                    {c > 0 && (
-                      <button
-                        className="ef-row-release"
-                        aria-label={`${ef.name}: ${t('ef.releaseRow', { n })}`}
-                        onClick={() => s.releaseFromEf(efRowIds(s.sources, ef.id, n))}
-                      >
-                        {t('ef.release')}
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-            {efRowsOutOfOrder(means) && <p className="warn small ef-warn">{t('ef.geomWarn')}</p>}
-            <button
-              className="panel-head-btn ef-apply"
-              title={t('ef.applyHint')}
-              disabled={means.length < 2}
-              onClick={() => s.applyEfDelays(ef.id)}
-            >
-              {t('ef.applyDelays')}
-            </button>
-          </div>
-        );
-      })}
-    </div>
   );
 }
 

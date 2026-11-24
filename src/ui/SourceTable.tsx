@@ -1,7 +1,8 @@
 import { useStore } from '../state/store';
 import type { Group } from '../core/types';
 import { useT } from '../i18n/useT';
-import { efCellLabel } from '../state/efArrays';
+import { efCellLabel, efInfoBySource, efLayouts } from '../state/efArrays';
+import { resolveAll as resolveEf } from '../state/resolve';
 
 const MS = 1000;
 
@@ -30,6 +31,9 @@ type Col = keyof typeof NUDGE;
  */
 export function SourceTable({ ids, group }: Props) {
   const s = useStore();
+  const efInfo = efInfoBySource(
+    efLayouts(resolveEf(s.sources, s.groups, s.provider), s.efArrays, s.sim.speedOfSound),
+  );
   const t = useT();
   const members = s.sources.filter((x) => ids.includes(x.id));
   const offsetS = group?.delayOffsetS ?? 0;
@@ -134,7 +138,7 @@ export function SourceTable({ ids, group }: Props) {
               >
                 <td className="left">{i + 1}</td>
                 <td className="left name">{model ? model.model : '-'}</td>
-                <td className="left name">{efCellLabel(s.efArrays, m) || '-'}</td>
+                <td className="left name">{efCellLabel(efInfo, m.id) || '-'}</td>
                 <td>{cell(t('tbl.level'), m.levelDb, (v) => s.patchSources([m.id], { levelDb: v }), 0.5, 1)}</td>
                 <td>{cell('X (m)', m.position.x, (v) => s.patchSources([m.id], { position: { x: v } }), 0.1)}</td>
                 <td>{cell('Y (m)', m.position.y, (v) => s.patchSources([m.id], { position: { y: v } }), 0.1)}</td>
@@ -157,13 +161,18 @@ export function SourceTable({ ids, group }: Props) {
                 <td
                   className="total"
                   title={
-                    m.gradientDelayS
-                      ? t('tbl.totalGradient', { ms: (m.gradientDelayS * MS).toFixed(2) })
-                      : undefined
+                    [
+                      m.gradientDelayS
+                        ? t('tbl.totalGradient', { ms: (m.gradientDelayS * MS).toFixed(2) })
+                        : '',
+                      m.efDelayS
+                        ? t('tbl.totalEf', { ms: (m.efDelayS * MS).toFixed(2) })
+                        : '',
+                    ].filter(Boolean).join(' · ') || undefined
                   }
                 >
-                  {((m.delayS + (m.gradientDelayS ?? 0) + offsetS) * MS).toFixed(2)}
-                  {m.gradientDelayS ? '*' : ''}
+                  {((m.delayS + (m.gradientDelayS ?? 0) + (m.efDelayS ?? 0) + offsetS) * MS).toFixed(2)}
+                  {m.gradientDelayS || m.efDelayS ? '*' : ''}
                 </td>
               </tr>
             );

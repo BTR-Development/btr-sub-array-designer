@@ -8,6 +8,7 @@
 | IBM Plex Mono | SIL OFL 1.1 | `src/assets/fonts/`, text in `LICENSES/OFL-IBM-Plex-Mono.txt` |
 | React, React DOM | MIT | npm |
 | zustand | MIT | npm |
+| sql.js (SQLite compiled to WebAssembly, for ArrayCalc files) | MIT; SQLite is public domain | npm |
 
 ## Fetched by the Windows build
 

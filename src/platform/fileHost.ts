@@ -12,12 +12,15 @@
  *  - browser: a file input to open, and either the File System Access API
  *    (Chromium) for a file that can be saved again in place, or a download.
  *
- * Bytes cross the bridge as base64, so a binary format can use it too.
+ * Bytes cross the bridge as base64, because a project may be opened from an
+ * ArrayCalc .dbpr, which is binary SQLite.
  *
  * The native side also PUSHES requests: a file double-clicked in Finder or
  * Explorer, or passed on the command line, arrives through
  * `window.__btrHostEvent` and is handed to whoever listens (the top bar).
  */
+
+import { allImportExtensions } from '../io/vendor/registry';
 
 export interface HostFile {
   /** absolute path in the desktop apps; a handle token in a browser that can save in place; else null */
@@ -141,7 +144,7 @@ function pickFile(): Promise<File | null> {
   return new Promise((resolve) => {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.btrsub,.json';
+    input.accept = allImportExtensions();
     input.addEventListener('change', () => resolve(input.files?.[0] ?? null));
     input.addEventListener('cancel', () => resolve(null));
     input.click();

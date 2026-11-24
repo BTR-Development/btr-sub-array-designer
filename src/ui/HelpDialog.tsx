@@ -14,6 +14,7 @@ const CONCEPTS: Array<{ title: MessageKey; body: MessageKey }> = [
   { title: 'help.concept.spacing', body: 'help.concept.spacingBody' },
   { title: 'help.concept.cardioid', body: 'help.concept.cardioidBody' },
   { title: 'help.concept.delay', body: 'help.concept.delayBody' },
+  { title: 'help.concept.endfire', body: 'help.concept.endfireBody' },
 ];
 
 const SHORTCUTS: Array<{ keys: string; what: MessageKey }> = [
@@ -29,7 +30,12 @@ const SHORTCUTS: Array<{ keys: string; what: MessageKey }> = [
   { keys: 'Cmd/Ctrl+G', what: 'help.key.group' },
   { keys: 'Cmd/Ctrl+Shift+G', what: 'help.key.ungroup' },
   { keys: 'Cmd/Ctrl+Enter', what: 'help.key.recalc' },
+  { keys: 'Shift + {drag}', what: 'help.key.dragMove' },
+  { keys: 'Cmd/Ctrl + {drag}', what: 'help.key.dragRotate' },
+  { keys: 'Alt', what: 'help.key.dragFine' },
   { keys: '[  ]', what: 'help.key.rotate' },
+  { keys: 'Cmd/Ctrl + ← →', what: 'help.key.arrowTurn' },
+  { keys: 'Cmd/Ctrl + ↑ ↓', what: 'help.key.arrowTilt' },
   { keys: 'Delete', what: 'help.key.delete' },
   { keys: 'F', what: 'help.key.fit' },
   { keys: 'Esc', what: 'help.key.deselect' },
@@ -87,7 +93,7 @@ export function HelpDialog({ onClose }: { onClose: () => void }) {
           <tbody>
             {SHORTCUTS.map((k) => (
               <tr key={k.keys}>
-                <td className="mono">{k.keys}</td>
+                <td className="mono">{k.keys.replace('{drag}', t('help.keyDrag'))}</td>
                 <td>{t(k.what)}</td>
               </tr>
             ))}

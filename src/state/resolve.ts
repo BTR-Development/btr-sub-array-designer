@@ -131,7 +131,10 @@ export function resolveSource(
   // użytkownika — patrz Source.gradientDelayS. Doliczony tutaj, trafia tą
   // samą drogą do silnika, do Inspektora i do eksporterów vendorowych, więc
   // procesor dostaje liczbę, z którą rig naprawdę gra.
-  let delayS = s.delayS + (s.gradientDelayS ?? 0);
+  // Delay end-fire to ta sama natura: warstwa pisana tylko przez maszynerię
+  // end-fire (Source.efDelayS), doliczana tutaj, więc trafia wszędzie tam,
+  // gdzie gradient — do silnika, tabel, karty opóźnień i eksporterów.
+  let delayS = s.delayS + (s.gradientDelayS ?? 0) + (s.efDelayS ?? 0);
 
   if (group) {
     position = rotateXY(s.position, group.anchor, group.rotationOffsetDeg);

@@ -79,8 +79,10 @@ const css = () => ({
 
 type Drag =
   | { kind: 'none' }
-  | { kind: 'orbit'; x: number; y: number; x0: number; y0: number; moved: boolean }
-  | { kind: 'pan'; x: number; y: number; x0: number; y0: number; moved: boolean };
+  | { kind: 'orbit'; x: number; y: number; x0: number; y0: number; moved: boolean; button: number }
+  | { kind: 'pan'; x: number; y: number; x0: number; y0: number; moved: boolean; button: number }
+  /** a plain press: a click picks, a drag draws a selection box */
+  | { kind: 'select'; x: number; y: number; x0: number; y0: number; moved: boolean; button: number; additive: boolean };
 
 /** Ile pikseli wolno przejechać, żeby to był jeszcze klik, a nie obrót. */
 const CLICK_SLOP_PX = 4;
@@ -95,6 +97,7 @@ export function Canvas3D({ result }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dragRef = useRef<Drag>({ kind: 'none' });
+  const [box, setBox] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const [size, setSize] = useState({ width: 800, height: 600 });
   const s = useStore();
   const t = useT();
@@ -329,6 +332,12 @@ export function Canvas3D({ result }: Props) {
   // which is the exact failure this zoom was written to remove.
   const liveCam = () => useStore.getState().cam3d;
 
+  /**
+   * The same keys as on the plan: a plain press SELECTS —
+   * a click picks a cabinet, a drag draws a box. Cmd/Ctrl + drag orbits the
+   * camera and Shift + drag pans it, because in this view the camera is the
+   * only thing a drag can turn or move. The middle button pans as before.
+   */
   const onPointerDown = (e: React.PointerEvent) => {
     // Only the buttons that mean something. A right press used to start an
     // orbit that no pointerup ever ended, because the browser opens its
@@ -336,11 +345,14 @@ export function Canvas3D({ result }: Props) {
     // orbited on every later mouse move with no button down at all.
     if (e.button !== 0 && e.button !== 1) return;
     (e.target as Element).setPointerCapture?.(e.pointerId);
-    const panning = e.shiftKey || e.button === 1;
-    dragRef.current = {
-      kind: panning ? 'pan' : 'orbit',
-      x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, moved: false,
-    };
+    const kind: Drag['kind'] =
+      e.button === 1 || (e.shiftKey && !(e.metaKey || e.ctrlKey))
+        ? 'pan'
+        : e.metaKey || e.ctrlKey
+          ? 'orbit'
+          : 'select';
+    const at = { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, moved: false, button: e.button };
+    dragRef.current = kind === 'select' ? { kind, ...at, additive: e.altKey } : { kind, ...at };
   };
   const onPointerMove = (e: React.PointerEvent) => {
     const d = dragRef.current;
@@ -350,6 +362,7 @@ export function Canvas3D({ result }: Props) {
     // so it ends the drag the first time the pointer moves without one.
     if (e.buttons === 0) {
       dragRef.current = { kind: 'none' };
+      setBox(null);
       return;
     }
     const dx = e.clientX - d.x;
@@ -357,12 +370,20 @@ export function Canvas3D({ result }: Props) {
     const far =
       Math.abs(e.clientX - d.x0) > CLICK_SLOP_PX || Math.abs(e.clientY - d.y0) > CLICK_SLOP_PX;
     dragRef.current = { ...d, x: e.clientX, y: e.clientY, moved: d.moved || far };
+    if (d.kind === 'select') {
+      if (d.moved || far) {
+        const r = (e.currentTarget as HTMLCanvasElement).getBoundingClientRect();
+        setBox({ x0: d.x0 - r.left, y0: d.y0 - r.top, x1: e.clientX - r.left, y1: e.clientY - r.top });
+      }
+      return;
+    }
     const cam = liveCam();
     if (d.kind === 'orbit') s.setCam3d(orbit(cam, dx, dy));
     else s.setCam3d(pan({ ...vp, cam }, dx, dy));
   };
   const endDrag = () => {
     dragRef.current = { kind: 'none' };
+    setBox(null);
   };
 
   /**
@@ -375,10 +396,28 @@ export function Canvas3D({ result }: Props) {
   const onPointerUp = (e: React.PointerEvent) => {
     const d = dragRef.current;
     dragRef.current = { kind: 'none' };
-    if (d.kind !== 'orbit' || d.moved) return;
-
+    setBox(null);
+    if (d.kind === 'none' || d.button !== 0) return;
     const r = (e.currentTarget as HTMLCanvasElement).getBoundingClientRect();
     const basis = basisOf(s.cam3d);
+
+    if (d.kind === 'select' && d.moved) {
+      // The box picks every cabinet whose centre it covers on screen.
+      const x0 = Math.min(d.x0, e.clientX) - r.left;
+      const x1 = Math.max(d.x0, e.clientX) - r.left;
+      const y0 = Math.min(d.y0, e.clientY) - r.top;
+      const y1 = Math.max(d.y0, e.clientY) - r.top;
+      const ids = resolved
+        .filter((x) => {
+          const [px, py] = project(vp, x.position, basis);
+          return px >= x0 && px <= x1 && py >= y0 && py <= y1;
+        })
+        .map((x) => x.source.id);
+      s.selectSources(ids, d.additive);
+      return;
+    }
+    if (d.moved) return;
+
     const boxes = resolved.map((x) => ({
       id: x.source.id,
       position: x.position,
@@ -425,6 +464,17 @@ export function Canvas3D({ result }: Props) {
         onContextMenu={(e) => e.preventDefault()}
         onDoubleClick={() => s.setCam3d(fitCamera(s.cam3d, framePoints, size.width, size.height))}
       />
+      {box && (
+        <div
+          className="marquee-box"
+          style={{
+            left: Math.min(box.x0, box.x1),
+            top: Math.min(box.y0, box.y1),
+            width: Math.abs(box.x1 - box.x0),
+            height: Math.abs(box.y1 - box.y0),
+          }}
+        />
+      )}
       <div className="canvas-hint small">{t('v3d.hint')}</div>
     </div>
   );

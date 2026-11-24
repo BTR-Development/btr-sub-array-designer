@@ -38,8 +38,8 @@ import { INITIAL_ARRAY_MODULE, moduleNameFor, type ArrayModuleState } from './ar
 import { resolveAll, rotateXY } from './resolve';
 import { crossAxes, type ArrayAxis } from '../engine/steering';
 import { drawnAxes } from '../render/view';
-import { EF_MAX_ARRAYS, EF_MAX_ROWS, type EfArray } from '../core/types';
-import { efRowMeansY, nextEfName } from './efArrays';
+import { EF_MAX_ROWS, type EfArray } from '../core/types';
+import { aimVector, nextEfName, rowsAlong, syncEfDelays, worldDeltaToLocal } from './efArrays';
 
 let idCounter = 0;
 export const newId = (p: string) => `${p}_${Date.now().toString(36)}_${(idCounter++).toString(36)}`;
@@ -187,19 +187,37 @@ export interface AppState extends Doc {
   ctxMenu: { x: number; y: number } | null;
   openCtxMenu: (x: number, y: number) => void;
   closeCtxMenu: () => void;
-  /** The "assign to end-fired" dialog. */
-  efAssignOpen: boolean;
-  setEfAssignOpen: (open: boolean) => void;
-  /** Assign; refused with a toast when a row is occupied or a cabinet is already assigned. */
-  assignToEf: (ids: string[], efId: string, row: number) => void;
-  releaseFromEf: (ids: string[]) => void;
+  /** The End-fire dialog: from the Sources panel, the right-click menu and the End-fire panel. */
+  endFireOpen: boolean;
+  setEndFireOpen: (open: boolean) => void;
+  /**
+   * Make an end-fire block of these cabinets, as ONE undo step. Cabinets that
+   * already stand in two or more rows along the aim are used as they stand;
+   * a single row becomes the FRONT row and `rows - 1` copies of it are placed
+   * behind it, `spacingM` apart. Returns the new array's id, or null (with a
+   * toast) when a cabinet already belongs to an end-fire array.
+   */
+  createEndFire: (opts: {
+    ids: string[];
+    aimDeg: number;
+    rows: number;
+    spacingM: number;
+    targetHz: number | null;
+  }) => string | null;
+  /** Add cabinets to an existing array; they take their row from where they stand. */
+  addToEf: (ids: string[], efId: string) => void;
+  /** Take cabinets out of whatever end-fire array holds them; their end-fire delay goes with it. */
+  removeFromEf: (ids: string[]) => void;
+  /** Dissolve an array: the cabinets stay where they are, the end-fire delays go. */
   deleteEfArray: (id: string) => void;
   /**
-   * Set every assigned cabinet's delay from the row geometry: the row farthest
-   * from the audience plays first, each nearer row is delayed by its distance
-   * over the speed of sound. Overwrites the Delay column of those cabinets.
+   * Dissolve an array but KEEP what it plays: each member's end-fire delay is
+   * added to its own Delay column first. The escape hatch to free cabinets.
    */
-  applyEfDelays: (efId: string) => void;
+  bakeEfArray: (id: string) => void;
+  patchEfArray: (id: string, patch: Partial<Pick<EfArray, 'name' | 'aimDeg' | 'targetHz'>>) => void;
+  /** Move every row behind the front row so neighbouring rows stand `spacingM` apart. */
+  respaceEf: (id: string, spacingM: number) => void;
 
   provider: CompositeSpeakerDataProvider;
 
@@ -243,8 +261,6 @@ export interface AppState extends Doc {
     axis: 'x' | 'y' | 'z';
     centered: boolean;
     arcDeg?: number;
-    /** also create an end-fired array with this many rows (the EF Array box) */
-    efRows?: number;
   }) => void;
   /**
    * Create a NEW sub array as its own module, so a project can hold more than
@@ -297,6 +313,8 @@ export interface AppState extends Doc {
    * wywołujący sam zrobił snapshot.
    */
   rotateSelected: (ids: string[], deltaDeg: number, opts?: { from?: Source[]; history?: boolean }) => void;
+  /** Tilt each cabinet's front up (+) or down (-) by deltaDeg, clamped to ±90°. */
+  tiltSelected: (ids: string[], deltaDeg: number, history?: boolean) => void;
   setReversalPattern: (
     ids: string[],
     pattern: boolean[],
@@ -702,7 +720,7 @@ export const useStore = create<AppState>((set, get) => ({
   dirty: false,
   toast: null,
   ctxMenu: null,
-  efAssignOpen: false,
+  endFireOpen: false,
 
   provider: new CompositeSpeakerDataProvider(builtinProvider, []),
 
@@ -891,7 +909,7 @@ export const useStore = create<AppState>((set, get) => ({
       anchorSourceId: s.sources[0]?.id ?? null,
     })),
 
-  createArray: ({ sourceId, count, spacingM, axis, centered, arcDeg = 0, efRows }) => {
+  createArray: ({ sourceId, count, spacingM, axis, centered, arcDeg = 0 }) => {
     const s = get();
     const base = s.sources.find((x) => x.id === sourceId);
     if (!base || count < 1) return;
@@ -946,21 +964,6 @@ export const useStore = create<AppState>((set, get) => ({
       selectedSourceIds: created.map((c) => c.id),
     });
 
-    // The EF Array box: the container rides the same undo step as the cabinets.
-    if (efRows && efRows >= 1) {
-      const st = get();
-      if (st.efArrays.length >= EF_MAX_ARRAYS) {
-        st.showToast({ message: 'arr.efLimit', vars: { max: EF_MAX_ARRAYS }, undoDepth: null });
-      } else {
-        const ef: EfArray = {
-          id: newId('ef'),
-          name: nextEfName(st.efArrays),
-          rows: Math.min(EF_MAX_ROWS, Math.max(1, Math.round(efRows))),
-        };
-        set({ efArrays: [...st.efArrays, ef] });
-        st.showToast({ message: 'toast.efCreated', vars: { name: ef.name, rows: ef.rows }, undoDepth: get().undoStack.length });
-      }
-    }
   },
 
   createSubArray: ({ speakerId, count, spacingM, axis, name }) => {
@@ -1099,6 +1102,20 @@ export const useStore = create<AppState>((set, get) => ({
     if (!ids.length || !Number.isFinite(deltaDeg)) return;
     if (opts?.history !== false) s.snapshot();
     set({ sources: rotateSelection(opts?.from ?? s.sources, s.groups, ids, deltaDeg) });
+  },
+
+  tiltSelected: (ids, deltaDeg, history = true) => {
+    const s = get();
+    if (!ids.length || !Number.isFinite(deltaDeg)) return;
+    const set0 = new Set(ids);
+    const tilt = (e: number) => Math.round(Math.max(-90, Math.min(90, e + deltaDeg)) * 1e6) / 1e6;
+    if (!s.sources.some((x) => set0.has(x.id) && tilt(x.rotation.elevationDeg) !== x.rotation.elevationDeg)) return;
+    if (history) s.snapshot();
+    set({
+      sources: s.sources.map((x) =>
+        set0.has(x.id) ? { ...x, rotation: { ...x.rotation, elevationDeg: tilt(x.rotation.elevationDeg) } } : x,
+      ),
+    });
   },
 
   rotatePositions: (ids, yawDeg) => {
@@ -1564,36 +1581,79 @@ export const useStore = create<AppState>((set, get) => ({
   markSaved: (file) => set({ file: { ...file }, dirty: false }),
   openCtxMenu: (x, y) => set({ ctxMenu: { x, y } }),
   closeCtxMenu: () => set({ ctxMenu: null }),
-  setEfAssignOpen: (open) => set({ efAssignOpen: open }),
+  setEndFireOpen: (open) => set({ endFireOpen: open }),
 
-  assignToEf: (ids, efId, row) => {
+  createEndFire: ({ ids, aimDeg, rows, spacingM, targetHz }) => {
     const s = get();
-    const ef = s.efArrays.find((a) => a.id === efId);
     const picked = s.sources.filter((x) => ids.includes(x.id));
-    if (!ef || !picked.length || row < 1 || row > ef.rows) return;
-    // No overwriting and no silent moves: a cabinet already in a row, and a
-    // row that already holds cabinets, are both released first, by hand.
+    if (!picked.length) return null;
     if (picked.some((x) => x.ef)) {
       s.showToast({ message: 'ef.alreadyAssigned', undoDepth: null });
-      return;
+      return null;
     }
-    if (s.sources.some((x) => x.ef?.arrayId === efId && x.ef.row === row)) {
-      s.showToast({ message: 'ef.noOverwrite', undoDepth: null });
-      return;
-    }
+    const byId = new Map(resolveAll(s.sources, s.groups, s.provider).map((r) => [r.source.id, r]));
+    const found = rowsAlong(
+      picked.map((p) => ({ id: p.id, position: byId.get(p.id)!.position })),
+      aimDeg,
+    );
     s.snapshot();
-    const within = new Set(ids);
-    set({
-      sources: s.sources.map((x) => (within.has(x.id) ? { ...x, ef: { arrayId: efId, row } } : x)),
-    });
+    const ef: EfArray = { id: newId('ef'), name: nextEfName(s.efArrays), aimDeg, targetHz };
+    const pickedIds = new Set(picked.map((p) => p.id));
+    let sources = s.sources.map((x) => (pickedIds.has(x.id) ? { ...x, ef: { arrayId: ef.id } } : x));
+    const groupsById = new Map(s.groups.map((g) => [g.id, g]));
+
+    const nRows = Math.min(EF_MAX_ROWS, Math.max(2, Math.round(rows)));
+    if (found.length < 2 && spacingM > 0) {
+      // One row: it is the FRONT row, and the rows behind it are its copies.
+      const v = aimVector(aimDeg);
+      const added: Source[] = [];
+      for (let k = 1; k < nRows; k++) {
+        const world = { x: -v.x * spacingM * k, y: -v.y * spacingM * k, z: 0 };
+        const row: Source[] = [];
+        for (const p of picked) {
+          const local = worldDeltaToLocal(world, p.groupId ? groupsById.get(p.groupId) ?? null : null);
+          const c: Source = {
+            ...p,
+            id: newId('src'),
+            label: nextLabel([...sources, ...added, ...row]),
+            position: { x: p.position.x + local.x, y: p.position.y + local.y, z: p.position.z },
+            rotation: { ...p.rotation },
+            ef: { arrayId: ef.id },
+            efDelayS: undefined,
+          };
+          row.push(c);
+        }
+        remapPositionKeys(row);
+        added.push(...row);
+      }
+      sources = [...sources, ...added];
+    }
+    const members = sources.filter((x) => x.ef?.arrayId === ef.id).map((x) => x.id);
+    set({ efArrays: [...s.efArrays, ef], sources, selectedSourceIds: members, selectedGroupId: null });
     get().showToast({
-      message: 'toast.efAssigned',
-      vars: { count: picked.length, name: ef.name, row },
+      message: 'toast.efCreated',
+      vars: { name: ef.name, count: members.length },
+      undoDepth: get().undoStack.length,
+    });
+    return ef.id;
+  },
+
+  addToEf: (ids, efId) => {
+    const s = get();
+    const ef = s.efArrays.find((a) => a.id === efId);
+    const picked = s.sources.filter((x) => ids.includes(x.id) && x.ef?.arrayId !== efId);
+    if (!ef || !picked.length) return;
+    s.snapshot();
+    const within = new Set(picked.map((p) => p.id));
+    set({ sources: s.sources.map((x) => (within.has(x.id) ? { ...x, ef: { arrayId: efId } } : x)) });
+    get().showToast({
+      message: 'toast.efAdded',
+      vars: { count: picked.length, name: ef.name },
       undoDepth: get().undoStack.length,
     });
   },
 
-  releaseFromEf: (ids) => {
+  removeFromEf: (ids) => {
     const s = get();
     const within = new Set(ids);
     const held = s.sources.filter((x) => within.has(x.id) && x.ef);
@@ -1623,27 +1683,69 @@ export const useStore = create<AppState>((set, get) => ({
     });
   },
 
-  applyEfDelays: (efId) => {
+  bakeEfArray: (id) => {
     const s = get();
-    const ef = s.efArrays.find((a) => a.id === efId);
+    const ef = s.efArrays.find((a) => a.id === id);
     if (!ef) return;
-    const means = efRowMeansY(resolveAll(s.sources, s.groups, s.provider), efId);
-    if (means.length < 2) return;
-    // The audience side is +Y: the farthest row (smallest Y) plays first, and
-    // every nearer row is delayed by its distance over the speed of sound.
-    const yFar = Math.min(...means.map((m) => m.y));
     s.snapshot();
-    const delayById = new Map<string, number>();
-    for (const m of means) {
-      const delayS = (m.y - yFar) / s.sim.speedOfSound;
-      for (const id of m.ids) delayById.set(id, delayS);
-    }
     set({
-      sources: s.sources.map((x) => (delayById.has(x.id) ? { ...x, delayS: delayById.get(x.id)! } : x)),
+      efArrays: s.efArrays.filter((a) => a.id !== id),
+      sources: s.sources.map((x) =>
+        x.ef?.arrayId === id
+          ? { ...x, ef: undefined, delayS: x.delayS + (x.efDelayS ?? 0), efDelayS: undefined }
+          : x,
+      ),
     });
     get().showToast({
-      message: 'toast.efDelays',
-      vars: { name: ef.name, rows: means.length },
+      message: 'toast.efBaked',
+      vars: { name: ef.name },
+      undoDepth: get().undoStack.length,
+    });
+  },
+
+  patchEfArray: (id, patch) => {
+    const s = get();
+    if (!s.efArrays.some((a) => a.id === id)) return;
+    s.snapshot();
+    set({ efArrays: s.efArrays.map((a) => (a.id === id ? { ...a, ...patch } : a)) });
+  },
+
+  respaceEf: (id, spacingM) => {
+    const s = get();
+    const ef = s.efArrays.find((a) => a.id === id);
+    if (!ef || !(spacingM > 0)) return;
+    const members = resolveAll(s.sources, s.groups, s.provider).filter((r) => r.source.ef?.arrayId === id);
+    const rows = rowsAlong(
+      members.map((r) => ({ id: r.source.id, position: r.position })),
+      ef.aimDeg,
+    );
+    if (rows.length < 2) return;
+    const v = aimVector(ef.aimDeg);
+    const groupsById = new Map(s.groups.map((g) => [g.id, g]));
+    const shift = new Map<string, number>();
+    rows.forEach((r, k) => {
+      // the front row stays; row k goes to k spacings behind it
+      const by = rows[0].depthM - k * spacingM - r.depthM;
+      for (const rid of r.ids) shift.set(rid, by);
+    });
+    s.snapshot();
+    set({
+      efArrays: s.efArrays.map((a) =>
+        a.id === id ? { ...a, targetHz: s.sim.speedOfSound / (4 * spacingM) } : a,
+      ),
+      sources: s.sources.map((x) => {
+        const by = shift.get(x.id);
+        if (by === undefined || Math.abs(by) < 1e-9) return x;
+        const local = worldDeltaToLocal(
+          { x: v.x * by, y: v.y * by, z: 0 },
+          x.groupId ? groupsById.get(x.groupId) ?? null : null,
+        );
+        return { ...x, position: { ...x.position, x: x.position.x + local.x, y: x.position.y + local.y } };
+      }),
+    });
+    get().showToast({
+      message: 'toast.efRespaced',
+      vars: { name: ef.name, m: spacingM.toFixed(2) },
       undoDepth: get().undoStack.length,
     });
   },
@@ -1826,3 +1928,22 @@ export function allSpeakers(customSpeakers: SpeakerModel[], inUse: Iterable<stri
 }
 
 export { DEFAULT_SPEAKER_ID };
+
+/**
+ * The end-fire delays are a function of the geometry, kept so on every change:
+ * a row dragged, a group turned, the air warmer, a cabinet added or removed.
+ * Written without a history step — it is derived, and the snapshot it would
+ * take holds the very geometry it is derived from.
+ */
+useStore.subscribe((st, prev) => {
+  if (
+    st.sources === prev.sources &&
+    st.groups === prev.groups &&
+    st.efArrays === prev.efArrays &&
+    st.sim.speedOfSound === prev.sim.speedOfSound
+  ) {
+    return;
+  }
+  const next = syncEfDelays(st.sources, st.groups, st.provider, st.efArrays, st.sim.speedOfSound);
+  if (next) useStore.setState({ sources: next });
+});

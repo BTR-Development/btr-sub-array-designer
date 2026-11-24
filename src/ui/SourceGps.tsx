@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { useStore } from '../state/store';
 import { Icon } from './icons';
 import { useT } from '../i18n/useT';
-import { efCellLabel } from '../state/efArrays';
+import { efCellLabel, efInfoBySource, efLayouts } from '../state/efArrays';
+import { resolveAll as resolveEf } from '../state/resolve';
 
 const MS = 1000;
 
@@ -16,6 +17,9 @@ const MS = 1000;
  */
 export function SourceGps({ style }: { style?: React.CSSProperties }) {
   const s = useStore();
+  const efInfo = efInfoBySource(
+    efLayouts(resolveEf(s.sources, s.groups, s.provider), s.efArrays, s.sim.speedOfSound),
+  );
   const t = useT();
   const [filter, setFilter] = useState('');
 
@@ -119,7 +123,7 @@ export function SourceGps({ style }: { style?: React.CSSProperties }) {
                   <td className="left">{m.label}</td>
                   <td className="left name">{s.provider.get(m.speakerId)?.model ?? '-'}</td>
                   <td className="left name">{groupName(m.groupId)}</td>
-                  <td className="left name">{efCellLabel(s.efArrays, m) || '-'}</td>
+                  <td className="left name">{efCellLabel(efInfo, m.id) || '-'}</td>
                   <td>{num(`${m.label} ${'X (m)'}`, m.position.x, (v) => s.patchSources([m.id], { position: { x: v } }), 0.1)}</td>
                   <td>{num(`${m.label} ${'Y (m)'}`, m.position.y, (v) => s.patchSources([m.id], { position: { y: v } }), 0.1)}</td>
                   <td>{num(`${m.label} ${'Z (m)'}`, m.position.z, (v) => s.patchSources([m.id], { position: { z: v } }), 0.1)}</td>

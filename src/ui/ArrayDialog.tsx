@@ -3,7 +3,6 @@ import { Modal, NumField, Field } from './widgets';
 import { useStore } from '../state/store';
 import { useT } from '../i18n/useT';
 import { orientedDimensions } from '../speakers/schema';
-import { EF_MAX_ARRAYS, EF_MAX_ROWS, EF_SANE_ROWS } from '../core/types';
 
 export function ArrayDialog({ onClose }: { onClose: () => void }) {
   const s = useStore();
@@ -13,9 +12,6 @@ export function ArrayDialog({ onClose }: { onClose: () => void }) {
   const model = seed ? s.provider.get(seed.speakerId) : undefined;
 
   const [count, setCount] = useState(8);
-  const [efOn, setEfOn] = useState(false);
-  const [efRows, setEfRows] = useState(2);
-  const [efAccept, setEfAccept] = useState(false);
   const [spacing, setSpacing] = useState(2);
   const [axis, setAxis] = useState<'x' | 'y' | 'z'>('x');
   const [centered, setCentered] = useState(true);
@@ -34,50 +30,8 @@ export function ArrayDialog({ onClose }: { onClose: () => void }) {
   const width = model ? orientedDimensions(model, seed?.rotation.rollDeg ?? 0).widthM : null;
   const span = (count - 1) * spacing;
 
-  const efFull = s.efArrays.length >= EF_MAX_ARRAYS;
-  const efNeedsAccept = efOn && efRows > EF_SANE_ROWS && !efAccept;
-
   return (
     <Modal title={t('arr.title')} onClose={onClose}>
-      {/* The EF box rides array creation: the container is made together with
-          the cabinets, and the rows are then filled BY HAND (right click on a
-          selection), never by guessing which cabinets the user meant. */}
-      <div className="check-row">
-        <label title={efFull ? t('arr.efLimit', { max: EF_MAX_ARRAYS }) : t('arr.efHint')}>
-          <input type="checkbox" checked={efOn} disabled={efFull} onChange={(e) => setEfOn(e.target.checked)} />
-          {t('arr.ef')}
-        </label>
-      </div>
-      {efOn && (
-        <>
-          <Field label={t('arr.efRows')} hint={t('arr.efRowsHint')}>
-            <NumField
-              label={t('arr.efRows')}
-              value={efRows}
-              onChange={(v) => {
-                setEfRows(Math.min(EF_MAX_ROWS, Math.max(1, Math.round(v))));
-                setEfAccept(false);
-              }}
-              step={1}
-              min={1}
-              max={EF_MAX_ROWS}
-            />
-          </Field>
-          <p className="hint">{t('arr.efHint')} {t('arr.efRowsHint')}</p>
-          {efRows > EF_SANE_ROWS && (
-            <>
-              <p className="warn">{t('arr.efWarn')}</p>
-              <div className="check-row">
-                <label>
-                  <input type="checkbox" checked={efAccept} onChange={(e) => setEfAccept(e.target.checked)} />
-                  {t('arr.efAccept')}
-                </label>
-              </div>
-            </>
-          )}
-        </>
-      )}
-
       <p className="hint">
         {t('arr.seed')}: <b>{seed.label}</b>,{' '}
         {model ? `${model.manufacturer} ${model.model}` : t('arr.unknownModel')}. {t('arr.seedNote')}
@@ -129,7 +83,6 @@ export function ArrayDialog({ onClose }: { onClose: () => void }) {
         <button onClick={onClose}>{t('ui.cancel')}</button>
         <button
           className="primary"
-          disabled={efNeedsAccept}
           onClick={() => {
             s.createArray({
               sourceId: seedId,
@@ -138,7 +91,6 @@ export function ArrayDialog({ onClose }: { onClose: () => void }) {
               axis,
               centered,
               arcDeg: axis === 'x' ? arc : 0,
-              efRows: efOn ? efRows : undefined,
             });
             onClose();
           }}

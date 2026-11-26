@@ -35,7 +35,7 @@ import { Splitter } from './Splitter';
 import { useSize } from './useSize';
 import type { VendorExporter } from '../io/vendor/types';
 import type { VendorImporter, VendorScene } from '../io/vendor/importTypes';
-import { requestFit } from '../render/view';
+import { cancelFit, requestFit } from '../render/view';
 
 export function App() {
   const s = useStore();
@@ -68,6 +68,8 @@ export function App() {
   // project before mounting ran against those sixteen cabinets anyway.
   useEffect(() => {
     requestFit();
+    // whoever asked for a fit while the application was up, it is moot once it is down
+    return cancelFit;
   }, []);
 
   // ------------------------------- files ----------------------------------

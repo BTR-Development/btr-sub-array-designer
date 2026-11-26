@@ -160,8 +160,26 @@ export function fitView(vp: { width: number; height: number }, b: Bounds, margin
 export function requestFit() {
   // Two passes: the first once React has re-rendered, the second after any
   // layout change (a panel opening/closing) has resized the canvas.
-  setTimeout(() => window.dispatchEvent(new Event('btr:fit')), 0);
-  setTimeout(() => window.dispatchEvent(new Event('btr:fit')), 180);
+  for (const delay of [0, 180]) {
+    const timer = setTimeout(() => {
+      pendingFits.delete(timer);
+      window.dispatchEvent(new Event('btr:fit'));
+    }, delay);
+    pendingFits.add(timer);
+  }
+}
+
+/** The passes requestFit has scheduled and that have not fired yet. */
+const pendingFits = new Set<ReturnType<typeof setTimeout>>();
+
+/**
+ * Drop every fit request still waiting. For when the application unmounts: a
+ * pass that fired after that would fit a canvas that is gone, and in a test run
+ * it would fire into a window that has already been torn down.
+ */
+export function cancelFit() {
+  for (const timer of pendingFits) clearTimeout(timer);
+  pendingFits.clear();
 }
 
 /**

@@ -158,6 +158,7 @@ export function CanvasStage({ result }: Props) {
    * never stopped either.
    */
   const fitTries = useRef(0);
+  const fitRetry = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fitAll = useCallback(() => {
     const rect = wrapRef.current?.getBoundingClientRect();
     const box = { width: rect?.width ?? 0, height: rect?.height ?? 0 };
@@ -166,7 +167,12 @@ export function CanvasStage({ result }: Props) {
       // ResizeObserver firing, will start a fresh round anyway.
       if (fitTries.current < 10) {
         fitTries.current++;
-        setTimeout(() => window.dispatchEvent(new Event('btr:fit')), 150);
+        // one retry in flight at a time: a second request before it fires joins it
+        if (fitRetry.current !== null) clearTimeout(fitRetry.current);
+        fitRetry.current = setTimeout(() => {
+          fitRetry.current = null;
+          window.dispatchEvent(new Event('btr:fit'));
+        }, 150);
       }
       return;
     }
@@ -188,6 +194,15 @@ export function CanvasStage({ result }: Props) {
     window.addEventListener('btr:fit', handler);
     return () => window.removeEventListener('btr:fit', handler);
   }, [fitAll]);
+
+  // A retry still waiting when the canvas goes away has nothing left to fit.
+  useEffect(
+    () => () => {
+      if (fitRetry.current !== null) clearTimeout(fitRetry.current);
+      fitRetry.current = null;
+    },
+    [],
+  );
 
   // "Prediction area ← view": snap the calculated extents to what is on screen.
   useEffect(() => {

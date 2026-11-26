@@ -4,7 +4,7 @@
  * panels as they were, every step lights something that exists, and Help is
  * reachable the way the tour says it is.
  */
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { App } from './App';
 import { TOUR_STEPS, tourBody, tourTitle } from './tourSteps';
@@ -186,5 +186,28 @@ describe('Help', () => {
     expect(document.querySelector('.modal')).toBeNull();
     expect(st().tutorialOpen).toBe(true);
     expect(document.querySelector('.tour')).not.toBeNull();
+  });
+});
+
+describe('unmounting', () => {
+  // A fit request still pending when the window goes away fires into a torn-down
+  // environment: in a test run that is an unhandled "window is not defined" that
+  // depends on timing, and in the app it is work for a canvas that is gone.
+  it('leaves no fit request behind to fire after the application is gone', async () => {
+    const fits = vi.fn();
+    window.addEventListener('btr:fit', fits);
+    try {
+      render(<App />);
+      // a fit the canvas cannot do yet (jsdom lays nothing out), so it schedules a retry
+      act(() => {
+        window.dispatchEvent(new Event('btr:fit'));
+      });
+      cleanup();
+      fits.mockClear();
+      await new Promise((r) => setTimeout(r, 400));
+      expect(fits).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener('btr:fit', fits);
+    }
   });
 });
